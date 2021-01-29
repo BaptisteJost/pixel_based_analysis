@@ -1,14 +1,12 @@
-import matplotlib.pyplot as plt
 import time
 import IPython
 import numpy as np
-from scipy.optimize import minimize
 import bjlib.likelihood_SO as lSO
 from astropy import units as u
 import bjlib.V3calc as V3
-import corner
 import emcee
 from multiprocessing import Pool
+import argparse
 
 
 def get_chi_squared_local(angle_array, data_skm, model_skm, prior=False,
@@ -16,7 +14,9 @@ def get_chi_squared_local(angle_array, data_skm, model_skm, prior=False,
                           birefringence=False, spectral_index=False):
 
     if spectral_index:
-        angle_index = 2
+        angle_index = - 2
+        angle_index_none = angle_index
+
         if not 0.5 <= angle_array[-2] < 2.5 or not -5 <= angle_array[-1] <= -1:
             return -np.inf
 
@@ -24,16 +24,17 @@ def get_chi_squared_local(angle_array, data_skm, model_skm, prior=False,
 
     else:
         angle_index = 0
+        angle_index_none = None
 
-    if np.any(np.array(angle_array[:-angle_index]) < (-0.5*np.pi)) or np.any(np.array(angle_array[:-angle_index]) > (0.5*np.pi)):
+    if np.any(np.array(angle_array[:angle_index_none]) < (-0.5*np.pi)) or np.any(np.array(angle_array[:angle_index_none]) > (0.5*np.pi)):
         return -np.inf
 
     if birefringence:
-        model_skm.miscal_angles = np.append(angle_array[:-(angle_index+1)], fixed_miscal_angles)
-        model_skm.bir_angle = angle_array[-(angle_index+1)]
+        model_skm.miscal_angles = np.append(angle_array[:-(-angle_index+1)], fixed_miscal_angles)
+        model_skm.bir_angle = angle_array[-(-angle_index+1)]
 
     else:
-        model_skm.miscal_angles = np.append(angle_array[:-angle_index], fixed_miscal_angles)
+        model_skm.miscal_angles = np.append(angle_array[:angle_index_none], fixed_miscal_angles)
         model_skm.bir_angle = 0
 
     model_skm.get_miscalibration_angle_matrix()
@@ -194,6 +195,24 @@ def get_file_name_sample(sampled_miscal_freq, nsteps, discard_num,
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--nsteps', type=int, help='MCMC steps',
+                        default=3000)
+    parser.add_argument('--discard', type=int, help='discard number',
+                        default=1000)
+    parser.add_argument('--birefringence', help='birefringence sampled',
+                        action="store_true")
+    parser.add_argument('--spectral', help='spectral indices sampled',
+                        action="store_true")
+    parser.add_argument('--prior_indices', type=int, nargs='+', help='prior indices',
+                        default=[0, 6])
+    args = parser.parse_args()
+
+    nsteps = args.nsteps
+    discard = args.discard
+    birefringence = args.birefringence
+    spectral = args.spectral
+    prior_indices = args.prior_indices
 
     start = time.time()
     true_miscal_angles = np.arange(0, 0.5, 0.5/6)*u.rad
@@ -207,16 +226,17 @@ def main():
     ddt = np.einsum('ik...,...kj->ijk', d, d.T)
     data6.ddt = ddt
 
-    # IPython.embed()
-    path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data'
+    path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/'
     path_local = './prior_tests/'
+    path = path_local
+
     start = time.time()
     flat_samples, flat_samples_raw = run_MCMC(
-        data6, model6, sampled_miscal_freq=6, nsteps=3000, discard_num=100,
-        sampled_birefringence=True, prior=True,
+        data6, model6, sampled_miscal_freq=6, nsteps=nsteps, discard_num=discard,
+        sampled_birefringence=birefringence, prior=True,
         walker_per_dim=2, prior_precision=(1*u.arcmin).to(u.rad).value,
-        prior_index=[0, 6], spectral_index=True, return_raw_samples=True,
-        save=True, path=path_NERSC)
+        prior_index=prior_indices, spectral_index=spectral, return_raw_samples=True,
+        save=True, path=path)
 
     print('time sampling in s = ', time.time() - start)
 
