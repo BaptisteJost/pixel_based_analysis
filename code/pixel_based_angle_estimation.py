@@ -7,6 +7,11 @@ import bjlib.V3calc as V3
 import emcee
 from multiprocessing import Pool
 import argparse
+from schwimmbad import MPIPool
+import cloudpickle
+import os
+import sys
+from mpi4py import MPI
 
 
 def get_chi_squared_local(angle_array, data_skm, model_skm, prior=False,
@@ -112,7 +117,17 @@ def data_and_model_quick(miscal_angles_array, frequencies_array, frequencies_by_
 def run_MCMC(data, model, sampled_miscal_freq, nsteps, discard_num,
              sampled_birefringence=False, prior=False,
              walker_per_dim=2, prior_precision=(1*u.arcmin).to(u.rad).value,
-             prior_index=[0, 6], spectral_index=False, return_raw_samples=False, save=False, path='./prior_tests/'):
+             prior_index=[0, 6], spectral_index=False, return_raw_samples=False,
+             save=False, path='./prior_tests/', parallel=False):
+
+    if parallel:
+        pool = MPIPool()
+        if not pool.is_master():
+            pool.wait()
+            sys.exit(0)
+
+    else:
+        pool = None
 
     ndim = sampled_miscal_freq + sampled_birefringence + 2*spectral_index
     nwalkers = walker_per_dim*ndim
@@ -141,7 +156,9 @@ def run_MCMC(data, model, sampled_miscal_freq, nsteps, discard_num,
         p0 = np.concatenate((p0, p0_spectral), axis=1)
 
     sampler = emcee.EnsembleSampler(
-        nwalkers, ndim, get_chi_squared_local, args=[data, model, prior, true_miscal_angles.value[sampled_miscal_freq:], angle_prior, sampled_birefringence, spectral_index])
+        nwalkers, ndim, get_chi_squared_local, args=[
+            data, model, prior, true_miscal_angles.value[sampled_miscal_freq:], angle_prior, sampled_birefringence, spectral_index],
+        pool=pool)
     sampler.reset()
     sampler.run_mcmc(p0, nsteps, progress=True)
 
@@ -206,6 +223,8 @@ def main():
                         action="store_true")
     parser.add_argument('--prior_indices', type=int, nargs='+', help='prior indices',
                         default=[0, 6])
+    parser.add_argument('--MPI', help='use MPI default false',
+                        action="store_true")
     args = parser.parse_args()
 
     nsteps = args.nsteps
@@ -213,6 +232,12 @@ def main():
     birefringence = args.birefringence
     spectral = args.spectral
     prior_indices = args.prior_indices
+    wMPI = args.MPI
+
+    if wMPI:
+        MPI.pickle.__init__(cloudpickle.dumps, cloudpickle.loads)
+        # To avoid issues between numpy and emcee
+        os.environ["OMP_NUM_THREADS"] = "1"
 
     start = time.time()
     true_miscal_angles = np.arange(0, 0.5, 0.5/6)*u.rad
@@ -236,7 +261,7 @@ def main():
         sampled_birefringence=birefringence, prior=True,
         walker_per_dim=2, prior_precision=(1*u.arcmin).to(u.rad).value,
         prior_index=prior_indices, spectral_index=spectral, return_raw_samples=True,
-        save=True, path=path)
+        save=True, path=path, parallel=wMPI)
 
     print('time sampling in s = ', time.time() - start)
 
