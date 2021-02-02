@@ -6,8 +6,10 @@ from astropy import units as u
 import bjlib.V3calc as V3
 import emcee
 from multiprocessing import Pool
-import argparse
+# import argparse
 from schwimmbad import MPIPool
+from schwimmbad import MultiPool
+
 import cloudpickle
 import os
 import sys
@@ -17,7 +19,6 @@ from mpi4py import MPI
 def get_chi_squared_local(angle_array, data_skm, model_skm, prior=False,
                           fixed_miscal_angles=[], miscal_priors=[],
                           birefringence=False, spectral_index=False):
-
     if spectral_index:
         angle_index = - 2
         angle_index_none = angle_index
@@ -120,14 +121,15 @@ def run_MCMC(data, model, sampled_miscal_freq, nsteps, discard_num,
              prior_index=[0, 6], spectral_index=False, return_raw_samples=False,
              save=False, path='./prior_tests/', parallel=False):
 
-    if parallel:
-        pool = MPIPool()
-        if not pool.is_master():
-            pool.wait()
-            sys.exit(0)
+    # if parallel:
+    #     pool = MPIPool()
+    #
+    #     if not pool.is_master():
+    #         pool.wait()
+    #         sys.exit(0)
 
-    else:
-        pool = None
+    # else:
+    #     pool = None
 
     ndim = sampled_miscal_freq + sampled_birefringence + 2*spectral_index
     nwalkers = walker_per_dim*ndim
@@ -154,14 +156,40 @@ def run_MCMC(data, model, sampled_miscal_freq, nsteps, discard_num,
     if spectral_index:
         p0_spectral = np.array(np.random.normal([1.5, -3], [0.5, 1], (nwalkers, 2)))
         p0 = np.concatenate((p0, p0_spectral), axis=1)
+    print('sampler')
+    if parallel:
+        print('a-1')
 
-    sampler = emcee.EnsembleSampler(
-        nwalkers, ndim, get_chi_squared_local, args=[
-            data, model, prior, true_miscal_angles.value[sampled_miscal_freq:], angle_prior, sampled_birefringence, spectral_index],
-        pool=pool)
-    sampler.reset()
-    sampler.run_mcmc(p0, nsteps, progress=True)
+        with MPIPool() as pool:
+            print('a-2')
 
+            if not pool.is_master():
+                print('a-3')
+
+                pool.wait()
+                print('a-4')
+
+                sys.exit(0)
+            print('a')
+            sampler = emcee.EnsembleSampler(
+                nwalkers, ndim, get_chi_squared_local, args=[
+                    data, model, prior, true_miscal_angles.value[sampled_miscal_freq:], angle_prior, sampled_birefringence, spectral_index],
+                pool=pool)
+            print('b')
+
+            sampler.reset()
+            print('c')
+
+            sampler.run_mcmc(p0, nsteps, progress=False)
+            print('d')
+
+    else:
+        sampler = emcee.EnsembleSampler(
+            nwalkers, ndim, get_chi_squared_local, args=[
+                data, model, prior, true_miscal_angles.value[sampled_miscal_freq:], angle_prior, sampled_birefringence, spectral_index],
+            pool=None)
+        sampler.reset()
+        sampler.run_mcmc(p0, nsteps, progress=False)
     flat_samples = sampler.get_chain(discard=discard_num, flat=True)
 
     file_name, file_name_raw = get_file_name_sample(
@@ -212,29 +240,61 @@ def get_file_name_sample(sampled_miscal_freq, nsteps, discard_num,
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--nsteps', type=int, help='MCMC steps',
-                        default=3000)
-    parser.add_argument('--discard', type=int, help='discard number',
-                        default=1000)
-    parser.add_argument('--birefringence', help='birefringence sampled',
-                        action="store_true")
-    parser.add_argument('--spectral', help='spectral indices sampled',
-                        action="store_true")
-    parser.add_argument('--prior_indices', type=int, nargs='+', help='prior indices',
-                        default=[0, 6])
-    parser.add_argument('--MPI', help='use MPI default false',
-                        action="store_true")
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--nsteps', type=int, help='MCMC steps',
+    #                     default=3000)
+    # parser.add_argument('--discard', type=int, help='discard number',
+    #                     default=1000)
+    # parser.add_argument('--birefringence', help='birefringence sampled',
+    #                     action="store_true")
+    # parser.add_argument('--spectral', help='spectral indices sampled',
+    #                     action="store_true")
+    # parser.add_argument('--prior_indices', type=int, nargs='+', help='prior indices',
+    #                     default=[0, 6])
+    # parser.add_argument('--MPI', help='use MPI default false',
+    #                     action="store_true")
+    # args = parser.parse_args()
+    #
+    # nsteps = args.nsteps
+    # discard = args.discard
+    # birefringence = args.birefringence
+    # spectral = args.spectral
+    # prior_indices = args.prior_indices
+    # wMPI = args.MPI
 
-    nsteps = args.nsteps
-    discard = args.discard
-    birefringence = args.birefringence
-    spectral = args.spectral
-    prior_indices = args.prior_indices
-    wMPI = args.MPI
+    nsteps = 100  # args.nsteps
+    discard = 1  # args.discard
+    birefringence = 1  # args.birefringence
+    spectral = 1  # args.spectral
+    prior_indices = [4, 5]  # args.prior_indices
+    wMPI = 0  # args.MPI
+    wMPI2 = 1
+    if wMPI2:
+        comm = MPI.COMM_WORLD
+        mpi_rank = MPI.COMM_WORLD.Get_rank()
+        nsim = comm.Get_size()
+        print(mpi_rank, nsim)
+        prior_indices = [mpi_rank % 6, (mpi_rank % 6)+1]
+        if mpi_rank//6 == 0:
+            birefringence = 1
+            spectral = 0
+
+        if mpi_rank//6 == 1:
+            birefringence = 0
+            spectral = 1
+
+        if mpi_rank//6 == 2:
+            birefringence = 1
+            spectral = 1
+        print('prior_indices = ', prior_indices)
+        print('birefringence = ', birefringence)
+        print('spectral = ', spectral)
+        # exit()
+    birefringence = 1  # args.birefringence
+    spectral = 1  # args.spectral
 
     if wMPI:
+        print('bla')
         MPI.pickle.__init__(cloudpickle.dumps, cloudpickle.loads)
         # To avoid issues between numpy and emcee
         os.environ["OMP_NUM_THREADS"] = "1"
@@ -253,7 +313,7 @@ def main():
 
     path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/'
     path_local = './prior_tests/'
-    path = path_local
+    path = path_NERSC
 
     start = time.time()
     flat_samples, flat_samples_raw = run_MCMC(

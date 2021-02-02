@@ -6,26 +6,33 @@ from scipy.stats import norm
 import IPython
 import argparse
 import pixel_based_angle_estimation
+from mpi4py import MPI
 
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--nsteps', type=int, help='MCMC steps',
-                    default=3000)
-parser.add_argument('--discard', type=int, help='discard number',
-                    default=1000)
-parser.add_argument('--birefringence', help='birefringence sampled',
-                    action="store_true")
-parser.add_argument('--spectral', help='spectral indices sampled',
-                    action="store_true")
-parser.add_argument('--prior_indices', type=int, nargs='+', help='prior indices',
-                    default=[0, 6])
-args = parser.parse_args()
+# parser = argparse.ArgumentParser()
+# parser.add_argument('--nsteps', type=int, help='MCMC steps',
+#                     default=3000)
+# parser.add_argument('--discard', type=int, help='discard number',
+#                     default=1000)
+# parser.add_argument('--birefringence', help='birefringence sampled',
+#                     action="store_true")
+# parser.add_argument('--spectral', help='spectral indices sampled',
+#                     action="store_true")
+# parser.add_argument('--prior_indices', type=int, nargs='+', help='prior indices',
+#                     default=[0, 6])
+# args = parser.parse_args()
+#
+# nsteps = args.nsteps
+# discard = args.discard
+# birefringence = args.birefringence
+# spectral = args.spectral
+# prior_indices = args.prior_indices
 
-nsteps = args.nsteps
-discard = args.discard
-birefringence = args.birefringence
-spectral = args.spectral
-prior_indices = args.prior_indices
+nsteps = 100  # args.nsteps
+discard = 1  # args.discard
+birefringence = 1  # args.birefringence
+spectral = 1  # args.spectral
+prior_indices = [0, 1]  # args.prior_indices
 
 ndim = 6+birefringence+2*spectral
 nwalkers = 2*ndim
@@ -35,7 +42,7 @@ sampled_miscal_freq = 6
 path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/'
 path_local = './prior_tests/'
 
-path = path_local
+path = path_NERSC
 
 file_name, file_name_raw = pixel_based_angle_estimation.get_file_name_sample(
     sampled_miscal_freq, nsteps, discard,
