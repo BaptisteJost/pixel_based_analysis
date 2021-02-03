@@ -62,6 +62,53 @@ def get_chi_squared_local(angle_array, data_skm, model_skm, prior=False,
     return chi_squared
 
 
+def get_chi_squared_local2(angle_array, ddtPN, model_skm, prior=False,
+                           fixed_miscal_angles=[], miscal_priors=[],
+                           birefringence=False, spectral_index=False):
+    if spectral_index:
+        angle_index = - 2
+        angle_index_none = angle_index
+
+        if not 0.5 <= angle_array[-2] < 2.5 or not -5 <= angle_array[-1] <= -1:
+            return -np.inf
+
+        model_skm.evaluate_mixing_matrix([angle_array[-2], 20, angle_array[-1]])
+
+    else:
+        angle_index = 0
+        angle_index_none = None
+
+    if np.any(np.array(angle_array[:angle_index_none]) < (-0.5*np.pi)) or np.any(np.array(angle_array[:angle_index_none]) > (0.5*np.pi)):
+        return -np.inf
+
+    if birefringence:
+        model_skm.miscal_angles = np.append(angle_array[:-(-angle_index+1)], fixed_miscal_angles)
+        model_skm.bir_angle = angle_array[-(-angle_index+1)]
+
+    else:
+        model_skm.miscal_angles = np.append(angle_array[:angle_index_none], fixed_miscal_angles)
+        model_skm.bir_angle = 0
+
+    model_skm.get_miscalibration_angle_matrix()
+    # model_skm.cmb_rotation()
+    model_skm.get_bir_matrix()
+
+    model_skm.get_projection_op()
+
+    chi_squared = np.einsum('ij,jip->...', (-model_skm.projection+model_skm.inv_noise),
+                            ddtPN)
+
+    if prior:
+        gaussian_prior = 0
+        for l in range(len(miscal_priors)):
+            gaussian_prior = np.sum((1/(2*(miscal_priors[l, 1]**2)))
+                                    * (angle_array[int(miscal_priors[l, 2])] - miscal_priors[l, 0])**2)
+
+        return chi_squared - gaussian_prior
+
+    return chi_squared
+
+
 def data_and_model_quick(miscal_angles_array, frequencies_array, frequencies_by_instrument_array, bir_angle=0*u.rad):
     data = lSO.sky_map(bir_angle=bir_angle, miscal_angles=miscal_angles_array,
                        frequencies_by_instrument=frequencies_by_instrument_array)
@@ -84,38 +131,39 @@ def data_and_model_quick(miscal_angles_array, frequencies_array, frequencies_by_
     data.get_mixing_matrix()
     data.get_miscalibration_angle_matrix()
     data.get_data()
-    data.get_noise()
-    data.inv_noise = data.inv_noise[index[0]*2:index[-1]*2 + 2,
-                                    index[0]*2:index[-1]*2 + 2]
-    data.noise_covariance = data.noise_covariance[index[0]*2:index[-1]*2 + 2,
-                                                  index[0]*2:index[-1]*2 + 2]
+    # data.get_noise()
+    # data.inv_noise = data.inv_noise[index[0]*2:index[-1]*2 + 2,
+    # index[0]*2:index[-1]*2 + 2]
+    # data.noise_covariance = data.noise_covariance[index[0]*2:index[-1]*2 + 2,
+    # index[0]*2:index[-1]*2 + 2]
 
-    data.get_projection_op()
-    data.data2alm()
-    data.get_primordial_spectra()
+    # data.get_projection_op()
+    # data.data2alm()
+    # data.get_primordial_spectra()
 
-    model.get_pysm_sky()
+    # model.get_pysm_sky()
     # model.get_frequency()
     model.frequencies = frequencies_array
-    model.get_freq_maps()
-    model.cmb_rotation()
-    model.get_signal()
+    # model.get_freq_maps()
+    # model.cmb_rotation()
+    model.get_bir_matrix()
+    # model.get_signal()
     model.get_mixing_matrix()
     model.get_miscalibration_angle_matrix()
-    model.get_data()
+    # model.get_data()
     model.get_noise()
     model.inv_noise = model.inv_noise[index[0]*2:index[-1]*2 + 2,
                                       index[0]*2:index[-1]*2 + 2]
     model.noise_covariance = model.noise_covariance[index[0]*2:index[-1]*2 + 2,
                                                     index[0]*2:index[-1]*2 + 2]
     model.get_projection_op()
-    model.data2alm()
-    model.get_primordial_spectra()
+    # model.data2alm()
+    # model.get_primordial_spectra()
 
     return data, model
 
 
-def run_MCMC(data, model, sampled_miscal_freq, nsteps, discard_num,
+def run_MCMC(ddtn, model, sampled_miscal_freq, nsteps, discard_num,
              sampled_birefringence=False, prior=False,
              walker_per_dim=2, prior_precision=(1*u.arcmin).to(u.rad).value,
              prior_index=[0, 6], spectral_index=False, return_raw_samples=False,
@@ -133,7 +181,9 @@ def run_MCMC(data, model, sampled_miscal_freq, nsteps, discard_num,
 
     ndim = sampled_miscal_freq + sampled_birefringence + 2*spectral_index
     nwalkers = walker_per_dim*ndim
-    true_miscal_angles = data.miscal_angles
+    # true_miscal_angles = data.miscal_angles
+    true_miscal_angles = np.array([0., 0.08333333, 0.16666667, 0.25, 0.33333333,
+                                   0.41666667])*u.rad
 
     std_6 = np.array([0.00017337, 0.00016427, 0.00013824, 0.0001337, 0.00013536, 0.00013666])
     # np.load('/home/baptiste/Documents/these/pixel_based_analysis/code/std_6angles_prior1arcmin.npy')
@@ -185,11 +235,11 @@ def run_MCMC(data, model, sampled_miscal_freq, nsteps, discard_num,
 
     else:
         sampler = emcee.EnsembleSampler(
-            nwalkers, ndim, get_chi_squared_local, args=[
-                data, model, prior, true_miscal_angles.value[sampled_miscal_freq:], angle_prior, sampled_birefringence, spectral_index],
+            nwalkers, ndim, get_chi_squared_local2, args=[
+                ddtn, model, prior, true_miscal_angles.value[sampled_miscal_freq:], angle_prior, sampled_birefringence, spectral_index],
             pool=None)
         sampler.reset()
-        sampler.run_mcmc(p0, nsteps, progress=False)
+        sampler.run_mcmc(p0, nsteps, progress=True)
     flat_samples = sampler.get_chain(discard=discard_num, flat=True)
 
     file_name, file_name_raw = get_file_name_sample(
@@ -268,7 +318,7 @@ def main():
     spectral = 1  # args.spectral
     prior_indices = [4, 5]  # args.prior_indices
     wMPI = 0  # args.MPI
-    wMPI2 = 1
+    wMPI2 = 0
     if wMPI2:
         comm = MPI.COMM_WORLD
         mpi_rank = MPI.COMM_WORLD.Get_rank()
@@ -306,18 +356,53 @@ def main():
                                          frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1])
 
     print('time initializing in s = ', time.time() - start)
-
+    data6.get_mask('/home/baptiste/BBPipe')
     d = data6.data
     ddt = np.einsum('ik...,...kj->ijk', d, d.T)
     data6.ddt = ddt
+    ddtPnoise = (data6.ddt+model6.noise_covariance[..., np.newaxis])
+    ddtPnoise_masked = ddtPnoise*data6.mask
+    ddtPnoise_masked_cleaned = []  # np.array([p for p in ddtPnoise_masked if np.all(p !=0)])
+    for i in range(len(data6.mask)):
+        if data6.mask[i]:
+            ddtPnoise_masked_cleaned.append(ddtPnoise[:, :, i])
+    ddtPnoise_masked_cleaned = np.array(ddtPnoise_masked_cleaned).T
 
+    angle_prior = []
+    for d in range(6):
+        angle_prior.append([true_miscal_angles.value[d], (1*u.arcmin).to(u.rad).value, int(d)])
+    angle_prior = np.array(angle_prior)
+    param_array = np.array([0., 0.08333333, 0.16666667, 0.25, 0.33333333,
+                            0.41666667, 0., 1.59, -3])
+    start = time.time()
+    temoin = get_chi_squared_local(param_array, data6, model6, True, [], angle_prior, True, True)
+    print('temps temoin = ', time.time() - start)
+
+    start = time.time()
+    test_ddt = get_chi_squared_local2(param_array, ddtPnoise, model6,
+                                      True, [], angle_prior, True, True)
+    print('temps test = ', time.time() - start)
+
+    start = time.time()
+    test_ddt_mask = get_chi_squared_local2(
+        param_array, ddtPnoise_masked, model6, True, [], angle_prior, True, True)
+    print('temps test = ', time.time() - start)
+
+    start = time.time()
+    test_ddt_clean = get_chi_squared_local2(
+        param_array, ddtPnoise_masked_cleaned, model6, True, [], angle_prior, True, True)
+    print('temps test = ', time.time() - start)
+    print('temoin - ddtpn = ', temoin - test_ddt)
+    print('ddtmask - ddtpn_clean = ', test_ddt_mask - test_ddt_clean)
+
+    # IPython.embed()
     path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/'
     path_local = './prior_tests/'
-    path = path_NERSC
+    path = path_local
 
     start = time.time()
     flat_samples, flat_samples_raw = run_MCMC(
-        data6, model6, sampled_miscal_freq=6, nsteps=nsteps, discard_num=discard,
+        ddtPnoise_masked_cleaned, model6, sampled_miscal_freq=6, nsteps=nsteps, discard_num=discard,
         sampled_birefringence=birefringence, prior=True,
         walker_per_dim=2, prior_precision=(1*u.arcmin).to(u.rad).value,
         prior_index=prior_indices, spectral_index=spectral, return_raw_samples=True,
