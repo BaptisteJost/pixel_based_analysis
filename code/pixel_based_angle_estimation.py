@@ -11,12 +11,13 @@ from schwimmbad import MPIPool
 from schwimmbad import MultiPool
 
 import cloudpickle
+import tracemalloc
 import os
 import sys
 from mpi4py import MPI
 
 
-def get_chi_squared_local(angle_array, data_skm, model_skm, prior=False,
+def get_chi_squared_local(angle_array, ddtPN, model_skm, prior=False,
                           fixed_miscal_angles=[], miscal_priors=[],
                           birefringence=False, spectral_index=False):
     if spectral_index:
@@ -44,53 +45,6 @@ def get_chi_squared_local(angle_array, data_skm, model_skm, prior=False,
         model_skm.bir_angle = 0
 
     model_skm.get_miscalibration_angle_matrix()
-    model_skm.cmb_rotation()
-
-    model_skm.get_projection_op()
-
-    chi_squared = np.einsum('ij,jip->...', (-model_skm.projection+model_skm.inv_noise),
-                            data_skm.ddt+model_skm.noise_covariance[..., np.newaxis])
-
-    if prior:
-        gaussian_prior = 0
-        for l in range(len(miscal_priors)):
-            gaussian_prior = np.sum((1/(2*(miscal_priors[l, 1]**2)))
-                                    * (angle_array[int(miscal_priors[l, 2])] - miscal_priors[l, 0])**2)
-
-        return chi_squared - gaussian_prior
-
-    return chi_squared
-
-
-def get_chi_squared_local2(angle_array, ddtPN, model_skm, prior=False,
-                           fixed_miscal_angles=[], miscal_priors=[],
-                           birefringence=False, spectral_index=False):
-    if spectral_index:
-        angle_index = - 2
-        angle_index_none = angle_index
-
-        if not 0.5 <= angle_array[-2] < 2.5 or not -5 <= angle_array[-1] <= -1:
-            return -np.inf
-
-        model_skm.evaluate_mixing_matrix([angle_array[-2], 20, angle_array[-1]])
-
-    else:
-        angle_index = 0
-        angle_index_none = None
-
-    if np.any(np.array(angle_array[:angle_index_none]) < (-0.5*np.pi)) or np.any(np.array(angle_array[:angle_index_none]) > (0.5*np.pi)):
-        return -np.inf
-
-    if birefringence:
-        model_skm.miscal_angles = np.append(angle_array[:-(-angle_index+1)], fixed_miscal_angles)
-        model_skm.bir_angle = angle_array[-(-angle_index+1)]
-
-    else:
-        model_skm.miscal_angles = np.append(angle_array[:angle_index_none], fixed_miscal_angles)
-        model_skm.bir_angle = 0
-
-    model_skm.get_miscalibration_angle_matrix()
-    # model_skm.cmb_rotation()
     model_skm.get_bir_matrix()
 
     model_skm.get_projection_op()
@@ -111,15 +65,15 @@ def get_chi_squared_local2(angle_array, ddtPN, model_skm, prior=False,
 
 def data_and_model_quick(miscal_angles_array, frequencies_array, frequencies_by_instrument_array, bir_angle=0*u.rad):
     data = lSO.sky_map(bir_angle=bir_angle, miscal_angles=miscal_angles_array,
-                       frequencies_by_instrument=frequencies_by_instrument_array)
+                       frequencies_by_instrument=frequencies_by_instrument_array, nside=512)
     model = lSO.sky_map(bir_angle=0*u.rad, miscal_angles=miscal_angles_array*0,
-                        frequencies_by_instrument=frequencies_by_instrument_array)
+                        frequencies_by_instrument=frequencies_by_instrument_array, nside=512)
 
     v3f = V3.so_V3_SA_bands()
     index = np.in1d(v3f, frequencies_array).nonzero()[0]
 
-    data.from_pysm2data()
-    model.from_pysm2data()
+    # data.from_pysm2data()
+    # model.from_pysm2data()
 
     data.get_pysm_sky()
     # data.get_frequency()
@@ -169,24 +123,12 @@ def run_MCMC(ddtn, model, sampled_miscal_freq, nsteps, discard_num,
              prior_index=[0, 6], spectral_index=False, return_raw_samples=False,
              save=False, path='./prior_tests/', parallel=False):
 
-    # if parallel:
-    #     pool = MPIPool()
-    #
-    #     if not pool.is_master():
-    #         pool.wait()
-    #         sys.exit(0)
-
-    # else:
-    #     pool = None
-
     ndim = sampled_miscal_freq + sampled_birefringence + 2*spectral_index
     nwalkers = walker_per_dim*ndim
-    # true_miscal_angles = data.miscal_angles
     true_miscal_angles = np.array([0., 0.08333333, 0.16666667, 0.25, 0.33333333,
                                    0.41666667])*u.rad
 
     std_6 = np.array([0.00017337, 0.00016427, 0.00013824, 0.0001337, 0.00013536, 0.00013666])
-    # np.load('/home/baptiste/Documents/these/pixel_based_analysis/code/std_6angles_prior1arcmin.npy')
 
     if not prior:
         angle_prior = []
@@ -206,36 +148,22 @@ def run_MCMC(ddtn, model, sampled_miscal_freq, nsteps, discard_num,
     if spectral_index:
         p0_spectral = np.array(np.random.normal([1.5, -3], [0.5, 1], (nwalkers, 2)))
         p0 = np.concatenate((p0, p0_spectral), axis=1)
-    print('sampler')
+
     if parallel:
-        print('a-1')
-
         with MPIPool() as pool:
-            print('a-2')
-
             if not pool.is_master():
-                print('a-3')
-
                 pool.wait()
-                print('a-4')
-
                 sys.exit(0)
-            print('a')
             sampler = emcee.EnsembleSampler(
                 nwalkers, ndim, get_chi_squared_local, args=[
                     data, model, prior, true_miscal_angles.value[sampled_miscal_freq:], angle_prior, sampled_birefringence, spectral_index],
                 pool=pool)
-            print('b')
-
             sampler.reset()
-            print('c')
-
             sampler.run_mcmc(p0, nsteps, progress=False)
-            print('d')
 
     else:
         sampler = emcee.EnsembleSampler(
-            nwalkers, ndim, get_chi_squared_local2, args=[
+            nwalkers, ndim, get_chi_squared_local, args=[
                 ddtn, model, prior, true_miscal_angles.value[sampled_miscal_freq:], angle_prior, sampled_birefringence, spectral_index],
             pool=None)
         sampler.reset()
@@ -283,6 +211,8 @@ def get_file_name_sample(sampled_miscal_freq, nsteps, discard_num,
     if spectral_index:
         file_name += '_SpectralSampled'
         file_name_raw += '_SpectralSampled'
+    file_name += '_MaskTest_nside512'
+    file_name_raw += '_MaskTest_nside512'
     file_name += '.npy'
     file_name_raw += '.npy'
 
@@ -312,13 +242,31 @@ def main():
     # prior_indices = args.prior_indices
     # wMPI = args.MPI
 
-    nsteps = 100  # args.nsteps
-    discard = 1  # args.discard
+    nsteps = 5000  # args.nsteps
+    discard = 500  # args.discard
     birefringence = 1  # args.birefringence
     spectral = 1  # args.spectral
-    prior_indices = [4, 5]  # args.prior_indices
+    prior_indices = [0, 6]  # args.prior_indices
     wMPI = 0  # args.MPI
-    wMPI2 = 0
+    wMPI2 = 1
+    if wMPI2:
+        comm = MPI.COMM_WORLD
+        mpi_rank = MPI.COMM_WORLD.Get_rank()
+        nsim = comm.Get_size()
+        print(mpi_rank, nsim)
+        print()
+        birefringence = 1
+        spectral = 1
+        if mpi_rank == 0:
+            prior_flag = True
+            prior_indices = [0, 6]
+            print('prior_flag : ', prior_flag, 'prior_indices = ', prior_indices)
+        if mpi_rank == 1:
+            prior_flag = False
+            prior_indices = []
+            print('prior_flag : ', prior_flag, 'prior_indices = ', prior_indices)
+
+    '''
     if wMPI2:
         comm = MPI.COMM_WORLD
         mpi_rank = MPI.COMM_WORLD.Get_rank()
@@ -327,7 +275,7 @@ def main():
         prior_indices = [mpi_rank % 6, (mpi_rank % 6)+1]
         if mpi_rank//6 == 0:
             birefringence = 1
-            spectral = 0
+            spectral = 1
 
         if mpi_rank//6 == 1:
             birefringence = 0
@@ -335,38 +283,71 @@ def main():
 
         if mpi_rank//6 == 2:
             birefringence = 1
-            spectral = 1
+            spectral = 0
         print('prior_indices = ', prior_indices)
         print('birefringence = ', birefringence)
         print('spectral = ', spectral)
         # exit()
-    birefringence = 1  # args.birefringence
-    spectral = 1  # args.spectral
+    '''
+    # birefringence = 1  # args.birefringence
+    # spectral = 1  # args.spectral
 
-    if wMPI:
-        print('bla')
-        MPI.pickle.__init__(cloudpickle.dumps, cloudpickle.loads)
-        # To avoid issues between numpy and emcee
-        os.environ["OMP_NUM_THREADS"] = "1"
+    # if wMPI:
+    #     print('bla')
+    #     MPI.pickle.__init__(cloudpickle.dumps, cloudpickle.loads)
+    #     # To avoid issues between numpy and emcee
+    #     os.environ["OMP_NUM_THREADS"] = "1"
 
+    tracemalloc.start()
     start = time.time()
+
     true_miscal_angles = np.arange(0, 0.5, 0.5/6)*u.rad
     data6, model6 = data_and_model_quick(miscal_angles_array=true_miscal_angles,
                                          frequencies_array=V3.so_V3_SA_bands(),
                                          frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1])
 
     print('time initializing in s = ', time.time() - start)
-    data6.get_mask('/home/baptiste/BBPipe')
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+    # tracemalloc.stop()
+
+    # tracemalloc.start()
+    data6.get_mask()
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+    # tracemalloc.stop()
     d = data6.data
     ddt = np.einsum('ik...,...kj->ijk', d, d.T)
-    data6.ddt = ddt
-    ddtPnoise = (data6.ddt+model6.noise_covariance[..., np.newaxis])
-    ddtPnoise_masked = ddtPnoise*data6.mask
+    # data6.ddt = ddt
+    ddtPnoise = (ddt+model6.noise_covariance[..., np.newaxis])
+    # ddtPnoise_masked = ddtPnoise*data6.mask
     ddtPnoise_masked_cleaned = []  # np.array([p for p in ddtPnoise_masked if np.all(p !=0)])
     for i in range(len(data6.mask)):
         if data6.mask[i]:
             ddtPnoise_masked_cleaned.append(ddtPnoise[:, :, i])
     ddtPnoise_masked_cleaned = np.array(ddtPnoise_masked_cleaned).T
+
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+
+    attr_remove = 1
+    if attr_remove:
+        delattr(data6, 'cmb_freq_maps')
+        delattr(data6, 'dust_freq_maps')
+        delattr(data6, 'sync_freq_maps')
+        delattr(data6, 'cmb_freq_rot')
+        delattr(data6, 'signal')
+        delattr(data6, 'mask')
+        delattr(data6, 'data')
+
+        delattr(model6, 'noise_cov_ell')
+        delattr(model6, 'inv_noise_ell')
+        delattr(model6, 'noise_covariance')
+        del data6
+        del ddt, ddtPnoise
+
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 
     angle_prior = []
     for d in range(6):
@@ -374,42 +355,30 @@ def main():
     angle_prior = np.array(angle_prior)
     param_array = np.array([0., 0.08333333, 0.16666667, 0.25, 0.33333333,
                             0.41666667, 0., 1.59, -3])
-    start = time.time()
-    temoin = get_chi_squared_local(param_array, data6, model6, True, [], angle_prior, True, True)
-    print('temps temoin = ', time.time() - start)
 
     start = time.time()
-    test_ddt = get_chi_squared_local2(param_array, ddtPnoise, model6,
-                                      True, [], angle_prior, True, True)
-    print('temps test = ', time.time() - start)
-
-    start = time.time()
-    test_ddt_mask = get_chi_squared_local2(
-        param_array, ddtPnoise_masked, model6, True, [], angle_prior, True, True)
-    print('temps test = ', time.time() - start)
-
-    start = time.time()
-    test_ddt_clean = get_chi_squared_local2(
+    test_ddt_clean = get_chi_squared_local(
         param_array, ddtPnoise_masked_cleaned, model6, True, [], angle_prior, True, True)
     print('temps test = ', time.time() - start)
-    print('temoin - ddtpn = ', temoin - test_ddt)
-    print('ddtmask - ddtpn_clean = ', test_ddt_mask - test_ddt_clean)
 
-    # IPython.embed()
     path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/'
     path_local = './prior_tests/'
-    path = path_local
+    path = path_NERSC
+
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"Current memory usage BEFORE SAMPLE is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 
     start = time.time()
     flat_samples, flat_samples_raw = run_MCMC(
         ddtPnoise_masked_cleaned, model6, sampled_miscal_freq=6, nsteps=nsteps, discard_num=discard,
-        sampled_birefringence=birefringence, prior=True,
+        sampled_birefringence=birefringence, prior=prior_flag,
         walker_per_dim=2, prior_precision=(1*u.arcmin).to(u.rad).value,
         prior_index=prior_indices, spectral_index=spectral, return_raw_samples=True,
         save=True, path=path, parallel=wMPI)
 
     print('time sampling in s = ', time.time() - start)
-
+    current, peak = tracemalloc.get_traced_memory()
+    print(f"Current memory usage AFTER SAMPLE is {current / 10**6}MB; Peak was {peak / 10**6}MB")
     exit()
 
 
@@ -608,4 +577,53 @@ if __name__ == "__main__":
 
     # plt.yscale('log')
     plt.show()
+    '''
+
+'''
+
+    def get_chi_squared_local(angle_array, data_skm, model_skm, prior=False,
+                              fixed_miscal_angles=[], miscal_priors=[],
+                              birefringence=False, spectral_index=False):
+        if spectral_index:
+            angle_index = - 2
+            angle_index_none = angle_index
+
+            if not 0.5 <= angle_array[-2] < 2.5 or not -5 <= angle_array[-1] <= -1:
+                return -np.inf
+
+            model_skm.evaluate_mixing_matrix([angle_array[-2], 20, angle_array[-1]])
+
+        else:
+            angle_index = 0
+            angle_index_none = None
+
+        if np.any(np.array(angle_array[:angle_index_none]) < (-0.5*np.pi)) or np.any(np.array(angle_array[:angle_index_none]) > (0.5*np.pi)):
+            return -np.inf
+
+        if birefringence:
+            model_skm.miscal_angles = np.append(angle_array[:-(-angle_index+1)], fixed_miscal_angles)
+            model_skm.bir_angle = angle_array[-(-angle_index+1)]
+
+        else:
+            model_skm.miscal_angles = np.append(angle_array[:angle_index_none], fixed_miscal_angles)
+            model_skm.bir_angle = 0
+
+        model_skm.get_miscalibration_angle_matrix()
+        # model_skm.cmb_rotation()
+        model_skm.get_bir_matrix()
+
+        model_skm.get_projection_op()
+
+        chi_squared = np.einsum('ij,jip->...', (-model_skm.projection+model_skm.inv_noise),
+                                data_skm.ddt+model_skm.noise_covariance[..., np.newaxis])
+
+        if prior:
+            gaussian_prior = 0
+            for l in range(len(miscal_priors)):
+                gaussian_prior = np.sum((1/(2*(miscal_priors[l, 1]**2)))
+                                        * (angle_array[int(miscal_priors[l, 2])] - miscal_priors[l, 0])**2)
+
+            return chi_squared - gaussian_prior
+
+        return chi_squared
     '''
