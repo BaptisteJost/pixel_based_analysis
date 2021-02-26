@@ -40,6 +40,8 @@ birefringence = 1  # args.birefringence
 spectral = 1  # args.spectral
 prior_indices = [0, 6]  # args.prior_indices
 prior_flag = True
+nside = 128
+fisher_flag = True
 
 wMPI2 = 0
 if wMPI2:
@@ -89,19 +91,20 @@ sampled_miscal_freq = 6
 path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/'
 path_local = './prior_tests/'
 
-path = path_NERSC
+path = path_local
 
 file_name, file_name_raw = pixel_based_angle_estimation.get_file_name_sample(
     sampled_miscal_freq, nsteps, discard,
     sampled_birefringence=birefringence, prior=prior_flag,
     prior_precision=prior_precision,
-    prior_index=prior_indices, spectral_index=spectral)
+    prior_index=prior_indices, spectral_index=spectral, nside=nside)
 print(file_name)
-file_name_raw = '5000Samples_RAW_MiscalFrom0to6_PriorPosition0to6_Precision2p9e-04rad_BirSampled_SpectralSampled_MaskTest_nside512.npy'
-print(file_name_raw)
+# file_name_raw = '5000Samples_RAW_MiscalFrom0to6_PriorPosition0to6_Precision2p9e-04rad_BirSampled_SpectralSampled_MaskTest_nside512.npy'
+# print(file_name_raw)
 
-true_miscal_angles = np.array([0., 0.08333333, 0.16666667, 0.25, 0.33333333,
-                               0.41666667])
+# true_miscal_angles = np.array([0., 0.08333333, 0.16666667, 0.25, 0.33333333,
+#                                0.41666667])
+true_miscal_angles = np.array([0]*6)
 frequencies = np.array([27,  39,  93, 145, 225, 280])
 
 labels = [r'$\alpha_{{{}}}$'.format(i) for i in frequencies]
@@ -116,14 +119,16 @@ if spectral:
 
 print(file_name)
 
-# flat_samples = np.load(path+file_name)
-raw_samples = np.load(path+file_name_raw)
-flat_samples = flat_and_discard(raw_samples, 2000)
+flat_samples = np.load(path+file_name)
+# raw_samples = np.load(path+file_name_raw)
+# flat_samples = flat_and_discard(raw_samples, 2000)
+
 # file_name2, file_name_raw2 = pixel_based_angle_estimation.get_file_name_sample(
 #     sampled_miscal_freq, nsteps, 2000,
 #     sampled_birefringence=birefringence, prior=True,
 #     prior_precision=prior_precision,
 #     prior_index=prior_indices, spectral_index=spectral)
+# IPython.embed()
 
 fig = corner.corner(flat_samples, labels=labels,
                     truths=true_miscal_angles,
@@ -133,6 +138,7 @@ axes = np.array(fig.axes).reshape((ndim, ndim))
 if prior_flag:
     for ii in range(prior_indices[0], prior_indices[-1]):
         ploted_prior = ii
+        print(ii)
         axes[ploted_prior, ploted_prior].axvline(
             true_miscal_angles[ploted_prior], color='r', linestyle='--')
         min_range = min(flat_samples[:, ploted_prior])
@@ -142,7 +148,31 @@ if prior_flag:
                                               norm.pdf(x_range, true_miscal_angles[ploted_prior], np.sqrt(
                                                   2)*prior_precision),
                                               color='red')
+# x_range_prior = x_range
+# norm_prior = norm.pdf(x_range, true_miscal_angles[ploted_prior], np.sqrt(2)*prior_precision)
+# IPython.embed()
+if fisher_flag:
+    cov = np.load('sqrt_inv_fisher_all0_priorposition0to6_prior1arcmin_nside128_mask0400.npy')
+    for ii in range(9):
+        ploted_prior = ii
+        print(ii)
+        # axes[ploted_prior, ploted_prior].axvline(
+        #     true_miscal_angles[ploted_prior], color='r', linestyle='--')
+        min_range = min(flat_samples[:, ploted_prior])
+        max_range = max(flat_samples[:, ploted_prior])
+        x_range = np.arange(min_range, max_range, (max_range - min_range)/nsteps)
+        axes[ploted_prior, ploted_prior].plot(x_range,
+                                              norm.pdf(
+                                                  x_range, true_miscal_angles[ploted_prior], cov[ii, ii]),
+                                              color='green')
+# x_range_fisher = x_range
+# norm_fisher = norm.pdf(x_range, true_miscal_angles[ploted_prior], cov[ii, ii])
+# IPython.embed()
+# file_name_save = '5000Samples_200discard_MiscalFrom0to6_PriorPosition0to6_Precision2p9e-04rad_BirSampled_SpectralSampled_MaskTest_nside512.npy'
+if fisher_flag:
+    plt.savefig(path + file_name[:-4] + '_fisher')
+else:
+    plt.savefig(path + file_name[:-4])
 
-file_name_save = '5000Samples_200discard_MiscalFrom0to6_PriorPosition0to6_Precision2p9e-04rad_BirSampled_SpectralSampled_MaskTest_nside512.npy'
-plt.savefig(path + 'RUN3_' + file_name_save[:-4])
+# plt.show()
 exit()
