@@ -34,6 +34,36 @@ def flat_and_discard(sample, discard_num):
     return flat_samples
 
 
+def multivariate_gaussian(pos, mu, Sigma):
+    """Return the multivariate Gaussian distribution on array pos."""
+
+    n = mu.shape[0]
+    Sigma_det = np.linalg.det(Sigma)
+    Sigma_inv = np.linalg.inv(Sigma)
+    N = np.sqrt((2*np.pi)**n * Sigma_det)
+    # This einsum call calculates (x-mu)T.Sigma-1.(x-mu) in a vectorized
+    # way across all the input variables.
+    fac = np.einsum('...k,kl,...l->...', pos-mu, Sigma_inv, pos-mu)
+
+    return np.exp(-fac / 2) / N
+
+
+def multivariate_gaussian_sigmaInv(pos, mu, Sigma_inv):
+    """Return the multivariate Gaussian distribution on array pos."""
+
+    n = mu.shape[0]
+    Sigma_det = 1/np.linalg.det(Sigma_inv)
+    # Sigma_inv = np.linalg.inv(Sigma)
+    print('sigma_det =', Sigma_det)
+    print('sigma_inv = ', Sigma_inv)
+    N = np.sqrt((2*np.pi)**n * Sigma_det)
+    # This einsum call calculates (x-mu)T.Sigma-1.(x-mu) in a vectorized
+    # way across all the input variables.
+    fac = np.einsum('...k,kl,...l->...', pos-mu, Sigma_inv, pos-mu)
+
+    return np.exp(-fac / 2) / N
+
+
 nsteps = 5000  # args.nsteps
 discard = 500  # args.discard
 birefringence = 1  # args.birefringence
@@ -42,6 +72,7 @@ prior_indices = [0, 6]  # args.prior_indices
 prior_flag = True
 nside = 128
 fisher_flag = True
+plot_2d_fisher_flag = False
 
 wMPI2 = 0
 if wMPI2:
@@ -167,7 +198,35 @@ if fisher_flag:
                                               color='green')
 # x_range_fisher = x_range
 # norm_fisher = norm.pdf(x_range, true_miscal_angles[ploted_prior], cov[ii, ii])
-# IPython.embed()
+IPython.embed()
+if plot_2d_fisher_flag:
+    fisher_matrix = np.load('fisher_all0_priorposition0to6_prior1arcmin_nside128_mask0400.npy')
+    nsteps = 1000
+    for i in range(9):
+        for ii in range(i, 9):
+            print(i, ii)
+            min_range_i = min(flat_samples[:, i])
+            max_range_i = max(flat_samples[:, i])
+
+            min_range_ii = min(flat_samples[:, ii])
+            max_range_ii = max(flat_samples[:, ii])
+            x_range_i = np.arange(min_range_i, max_range_i, (max_range_i - min_range_i)/nsteps)
+            x_range_ii = np.arange(min_range_ii, max_range_ii, (max_range_ii - min_range_ii)/nsteps)
+
+            grid_i, grid_ii = np.meshgrid(x_range_i, x_range_ii, indexing='xy')
+
+            mu = np.array([true_miscal_angles[i], true_miscal_angles[ii]])
+            pos = np.empty(grid_i.shape + (2,))
+            pos[:, :, 0] = grid_i
+            pos[:, :, 1] = grid_ii
+            fisher_i_ii = np.array([[fisher_matrix[i, i], fisher_matrix[ii, i]],
+                                    [fisher_matrix[i, ii], fisher_matrix[ii, ii]]])
+            fisher_2D_gaussian = multivariate_gaussian_sigmaInv(pos, mu, fisher_i_ii)
+            if i == 7 and ii == 8:
+                print(fisher_2D_gaussian)
+            cs2 = axes[ii, i].contour(grid_i, grid_ii, fisher_2D_gaussian, colors='g',
+                                      linestyles='--')
+# plt.savefig(path+'test_2d_fisher')
 # file_name_save = '5000Samples_200discard_MiscalFrom0to6_PriorPosition0to6_Precision2p9e-04rad_BirSampled_SpectralSampled_MaskTest_nside512.npy'
 if fisher_flag:
     plt.savefig(path + file_name[:-4] + '_fisher')
