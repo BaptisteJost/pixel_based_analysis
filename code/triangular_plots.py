@@ -65,16 +65,16 @@ def multivariate_gaussian_sigmaInv(pos, mu, Sigma_inv):
 
 
 nsteps = 5000  # args.nsteps
-discard = 500  # args.discard
+discard = 1000  # args.discard
 birefringence = 1  # args.birefringence
 spectral = 1  # args.spectral
 prior_indices = [0, 6]  # args.prior_indices
 prior_flag = True
-nside = 128
+nside = 512
 fisher_flag = True
-plot_2d_fisher_flag = False
+plot_2d_fisher_flag = True
 
-wMPI2 = 0
+wMPI2 = 1
 if wMPI2:
     comm = MPI.COMM_WORLD
     mpi_rank = MPI.COMM_WORLD.Get_rank()
@@ -91,7 +91,36 @@ if wMPI2:
         prior_flag = False
         prior_indices = []
         print('prior_flag : ', prior_flag, 'prior_indices = ', prior_indices)
-"""
+
+    comm = MPI.COMM_WORLD
+    mpi_rank = MPI.COMM_WORLD.Get_rank()
+    nsim = comm.Get_size()
+    print(mpi_rank, nsim)
+    if mpi_rank > 1:
+        prior_indices = [(mpi_rank-2) % 6, ((mpi_rank-2) % 6)+1]
+
+    print('prior_indices = ', prior_indices)
+    print('birefringence = ', birefringence)
+    print('spectral = ', spectral)
+
+'''
+if wMPI2:
+    comm = MPI.COMM_WORLD
+    mpi_rank = MPI.COMM_WORLD.Get_rank()
+    nsim = comm.Get_size()
+    print(mpi_rank, nsim)
+    print()
+    birefringence = 1
+    spectral = 1
+    if mpi_rank == 0:
+        prior_flag = True
+        prior_indices = [0, 6]
+        print('prior_flag : ', prior_flag, 'prior_indices = ', prior_indices)
+    if mpi_rank == 1:
+        prior_flag = False
+        prior_indices = []
+        print('prior_flag : ', prior_flag, 'prior_indices = ', prior_indices)
+
 if wMPI2:
     comm = MPI.COMM_WORLD
     mpi_rank = MPI.COMM_WORLD.Get_rank()
@@ -112,17 +141,17 @@ if wMPI2:
     print('prior_indices = ', prior_indices)
     print('birefringence = ', birefringence)
     print('spectral = ', spectral)
-"""
+'''
 
 ndim = 6+birefringence+2*spectral
 nwalkers = 2*ndim
 prior_precision = (1*u.arcmin).to(u.rad).value
 sampled_miscal_freq = 6
 
-path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/'
+path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/run02032021/'
 path_local = './prior_tests/'
 
-path = path_local
+path = path_NERSC
 
 file_name, file_name_raw = pixel_based_angle_estimation.get_file_name_sample(
     sampled_miscal_freq, nsteps, discard,
@@ -183,7 +212,9 @@ if prior_flag:
 # norm_prior = norm.pdf(x_range, true_miscal_angles[ploted_prior], np.sqrt(2)*prior_precision)
 # IPython.embed()
 if fisher_flag:
-    cov = np.load('sqrt_inv_fisher_all0_priorposition0to6_prior1arcmin_nside128_mask0400.npy')
+    # cov = np.load('sqrt_inv_fisher_all0_priorposition0to6_prior1arcmin_nside128_mask0400.npy')
+    cov = np.load(path+'sqrt_inv_fisher_prior_'+file_name)
+
     for ii in range(9):
         ploted_prior = ii
         print(ii)
@@ -198,9 +229,11 @@ if fisher_flag:
                                               color='green')
 # x_range_fisher = x_range
 # norm_fisher = norm.pdf(x_range, true_miscal_angles[ploted_prior], cov[ii, ii])
-IPython.embed()
+# IPython.embed()
 if plot_2d_fisher_flag:
-    fisher_matrix = np.load('fisher_all0_priorposition0to6_prior1arcmin_nside128_mask0400.npy')
+    # fisher_matrix = np.load('fisher_all0_priorposition0to6_prior1arcmin_nside128_mask0400.npy')
+    fisher_matrix = np.load(path+'fisher_prior_'+file_name)
+
     nsteps = 1000
     for i in range(9):
         for ii in range(i, 9):
@@ -228,7 +261,9 @@ if plot_2d_fisher_flag:
                                       linestyles='--')
 # plt.savefig(path+'test_2d_fisher')
 # file_name_save = '5000Samples_200discard_MiscalFrom0to6_PriorPosition0to6_Precision2p9e-04rad_BirSampled_SpectralSampled_MaskTest_nside512.npy'
-if fisher_flag:
+if plot_2d_fisher_flag:
+    plt.savefig(path + file_name[:-4] + '_fisher2D')
+elif fisher_flag:
     plt.savefig(path + file_name[:-4] + '_fisher')
 else:
     plt.savefig(path + file_name[:-4])

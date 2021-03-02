@@ -9,7 +9,7 @@ from scipy.linalg import block_diag
 import matplotlib.pyplot as plt
 import healpy as hp
 import copy
-
+from mpi4py import MPI
 
 # import emcee
 # from multiprocessing import Pool
@@ -302,17 +302,98 @@ def term_fisher_debug(term, ddt):
 
 
 def main():
-    true_miscal_angles = np.array([0]*6)*u.rad
     # true_miscal_angles = np.arange(0.0, 0.5, 0.5/6)*u.rad
+    true_miscal_angles = np.array([0]*6)*u.rad
 
-    nside = 128
+    prior_precision = (1*u.arcmin).to(u.rad).value
+    nside = 512
+
+    nsteps = 5000
+    discard = 1000
+    birefringence = 1
+    spectral = 1
+    prior_indices = [0, 6]
+    prior_flag = True
+    sampled_miscal_freq = 6
+
+    wMPI2 = 1
+    if wMPI2:
+        comm = MPI.COMM_WORLD
+        mpi_rank = MPI.COMM_WORLD.Get_rank()
+        nsim = comm.Get_size()
+        print(mpi_rank, nsim)
+        print()
+        birefringence = 1
+        spectral = 1
+        if mpi_rank == 0:
+            prior_flag = True
+            prior_indices = [0, 6]
+            print('prior_flag : ', prior_flag, 'prior_indices = ', prior_indices)
+        if mpi_rank == 1:
+            prior_flag = False
+            prior_indices = []
+            print('prior_flag : ', prior_flag, 'prior_indices = ', prior_indices)
+
+        comm = MPI.COMM_WORLD
+        mpi_rank = MPI.COMM_WORLD.Get_rank()
+        nsim = comm.Get_size()
+        print(mpi_rank, nsim)
+        if mpi_rank > 1:
+            prior_indices = [(mpi_rank-2) % 6, ((mpi_rank-2) % 6)+1]
+
+        print('prior_indices = ', prior_indices)
+        print('birefringence = ', birefringence)
+        print('spectral = ', spectral)
+    """
+    if wMPI2:
+        comm = MPI.COMM_WORLD
+        mpi_rank = MPI.COMM_WORLD.Get_rank()
+        nsim = comm.Get_size()
+        print(mpi_rank, nsim)
+        print()
+        birefringence = 1
+        spectral = 1
+        if mpi_rank == 0:
+            prior_flag = True
+            prior_indices = [0, 6]
+            print('prior_flag : ', prior_flag, 'prior_indices = ', prior_indices)
+        if mpi_rank == 1:
+            prior_flag = False
+            prior_indices = []
+            print('prior_flag : ', prior_flag, 'prior_indices = ', prior_indices)
+
+    if wMPI2:
+        comm = MPI.COMM_WORLD
+        mpi_rank = MPI.COMM_WORLD.Get_rank()
+        nsim = comm.Get_size()
+        print(mpi_rank, nsim)
+        prior_indices = [mpi_rank % 6, (mpi_rank % 6)+1]
+        if mpi_rank//6 == 0:
+            birefringence = 1
+            spectral = 1
+
+        if mpi_rank//6 == 1:
+            birefringence = 0
+            spectral = 1
+
+        if mpi_rank//6 == 2:
+            birefringence = 1
+            spectral = 0
+        print('prior_indices = ', prior_indices)
+        print('birefringence = ', birefringence)
+        print('spectral = ', spectral)
+    """
+
     data, model = pix.data_and_model_quick(miscal_angles_array=true_miscal_angles,
                                            frequencies_array=V3.so_V3_SA_bands(),
                                            frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside)
     # data.get_mask(path='/home/baptiste/BBPipe')
 
-    path = '/home/baptiste/BBPipe'
-    mask_ = hp.read_map(path + "/test_mapbased_param/mask_04000.fits")
+    path_BB_local = '/home/baptiste/BBPipe'
+    path_BB_NERSC = '/global/homes/j/jost/BBPipe'
+    path_BB = path_BB_NERSC
+
+    mask_ = hp.read_map(path_BB + "/test_mapbased_param/mask_04000.fits")
     mask = hp.ud_grade(mask_, nside)
     d = data.data
     ddt = np.einsum('ik...,...kj->ijk', d, d.T)
@@ -338,13 +419,31 @@ def main():
     fisher_matrix = fisher(ddtPnoise_masked_cleaned, model, diff_list, diff_diff_list)
     print('time fisher = ', time.time() - start)
 
-    prior_precision = (1*u.arcmin).to(u.rad).value
     fisher_prior = copy.deepcopy(fisher_matrix)
-    for i in range(6):
+    for i in range(prior_indices[0], prior_indices[-1]):
         print(i)
         fisher_prior[i, i] += 1/prior_precision**2
     inv_fisher_prior = np.linalg.inv(fisher_prior)
+    sqrt_inv_fisher_prior = np.sqrt(inv_fisher_prior)
     # fisher_matrix = copy.deepcopy(fisher_prior)
+
+    path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/run02032021//'
+    path_local = './prior_tests/'
+    path = path_NERSC
+
+    file_name, file_name_raw = pix.get_file_name_sample(
+        sampled_miscal_freq, nsteps, discard,
+        sampled_birefringence=birefringence, prior=prior_flag,
+        prior_precision=prior_precision,
+        prior_index=prior_indices, spectral_index=spectral, nside=nside)
+    print(file_name)
+
+    np.save(path+'fisher_'+file_name[:-4], fisher_matrix)
+    np.save(path+'fisher_prior_'+file_name[:-4], fisher_prior)
+    np.save(path+'inv_fisher_prior_'+file_name[:-4], inv_fisher_prior)
+    np.save(path+'sqrt_inv_fisher_prior_'+file_name[:-4], sqrt_inv_fisher_prior)
+
+    exit()
 
     values, vectors = np.linalg.eig(fisher_matrix)
     params = np.append(true_miscal_angles.value, [data.bir_angle.value,

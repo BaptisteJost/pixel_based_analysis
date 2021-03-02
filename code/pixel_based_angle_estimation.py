@@ -255,14 +255,15 @@ def main():
     # wMPI = args.MPI
 
     nsteps = 5000  # args.nsteps
-    discard = 500  # args.discard
+    discard = 1000  # args.discard
     birefringence = 1  # args.birefringence
     spectral = 1  # args.spectral
     prior_indices = [0, 6]  # args.prior_indices
     prior_flag = True
-    nside = 128
+    nside = 512
     wMPI = 0  # args.MPI
-    wMPI2 = 0
+    wMPI2 = 1
+
     if wMPI2:
         comm = MPI.COMM_WORLD
         mpi_rank = MPI.COMM_WORLD.Get_rank()
@@ -280,29 +281,28 @@ def main():
             prior_indices = []
             print('prior_flag : ', prior_flag, 'prior_indices = ', prior_indices)
 
-    '''
-    if wMPI2:
         comm = MPI.COMM_WORLD
         mpi_rank = MPI.COMM_WORLD.Get_rank()
         nsim = comm.Get_size()
         print(mpi_rank, nsim)
-        prior_indices = [mpi_rank % 6, (mpi_rank % 6)+1]
-        if mpi_rank//6 == 0:
-            birefringence = 1
-            spectral = 1
-
-        if mpi_rank//6 == 1:
-            birefringence = 0
-            spectral = 1
-
-        if mpi_rank//6 == 2:
-            birefringence = 1
-            spectral = 0
+        if mpi_rank > 1:
+            prior_indices = [(mpi_rank-2) % 6, ((mpi_rank-2) % 6)+1]
+        # if mpi_rank//6 == 0:
+        #     birefringence = 1
+        #     spectral = 1
+        #
+        # if mpi_rank//6 == 1:
+        #     birefringence = 0
+        #     spectral = 1
+        #
+        # if mpi_rank//6 == 2:
+        #     birefringence = 1
+        #     spectral = 0
         print('prior_indices = ', prior_indices)
         print('birefringence = ', birefringence)
         print('spectral = ', spectral)
         # exit()
-    '''
+
     # birefringence = 1  # args.birefringence
     # spectral = 1  # args.spectral
 
@@ -328,7 +328,9 @@ def main():
     # tracemalloc.stop()
 
     # tracemalloc.start()
-    data6.get_mask(path='/home/baptiste/BBPipe')
+    # data6.get_mask(path='/home/baptiste/BBPipe')
+    data6.get_mask()
+
     current, peak = tracemalloc.get_traced_memory()
     print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
     # tracemalloc.stop()
@@ -377,9 +379,9 @@ def main():
         param_array, ddtPnoise_masked_cleaned, model6, True, [], angle_prior, True, True)
     print('temps test = ', time.time() - start)
 
-    path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/'
+    path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/run02032021/'
     path_local = './prior_tests/'
-    path = path_local
+    path = path_NERSC
 
     current, peak = tracemalloc.get_traced_memory()
     print(f"Current memory usage BEFORE SAMPLE is {current / 10**6}MB; Peak was {peak / 10**6}MB")
