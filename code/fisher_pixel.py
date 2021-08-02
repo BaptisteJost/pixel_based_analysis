@@ -25,73 +25,102 @@ from mpi4py import MPI
 
 
 def diff_mixing_matrix(model):
-    diff_element = model.A.diff(model.frequencies,
-                                model.spectral_indices[0], model.spectral_indices[1], model.spectral_indices[2])
+    if not model.fix_temp:
+        diff_element = model.A.diff(model.frequencies,
+                                    model.spectral_indices[0], model.spectral_indices[1], model.spectral_indices[2])
+    else:
+        diff_element = model.A.diff(model.frequencies,
+                                    model.spectral_indices[0], model.spectral_indices[1])
     mix_diff_Bd = []
-    mix_diff_Td = []
+    if not model.fix_temp:
+        mix_diff_Td = []
     mix_diff_Bs = []
     for i in range(len(model.frequencies)):
         mix_diff_Bd.append([0, diff_element[0][i][0], 0])
-        mix_diff_Td.append([0, diff_element[1][i][0], 0])
-        mix_diff_Bs.append([0, 0, diff_element[2][i][0]])
+        if not model.fix_temp:
+            mix_diff_Td.append([0, diff_element[1][i][0], 0])
+            mix_diff_Bs.append([0, 0, diff_element[2][i][0]])
+        else:
+            mix_diff_Bs.append([0, 0, diff_element[1][i][0]])
     mix_diff_Bd = np.array(mix_diff_Bd)
-    mix_diff_Td = np.array(mix_diff_Td)
-    mix_diff_Bs = np.array(mix_diff_Bs)
-    # mixing_matrix = np.repeat(A_, 2, 0)
-
     mix_diff_Bd_QU = np.repeat(mix_diff_Bd, 2, 1)
-    mix_diff_Td_QU = np.repeat(mix_diff_Td, 2, 1)
-    mix_diff_Bs_QU = np.repeat(mix_diff_Bs, 2, 1)
-
     mix_diff_Bd_QU = np.repeat(mix_diff_Bd_QU, 2, 0)
-    mix_diff_Td_QU = np.repeat(mix_diff_Td_QU, 2, 0)
+
+    if not model.fix_temp:
+        mix_diff_Td = np.array(mix_diff_Td)
+        mix_diff_Td_QU = np.repeat(mix_diff_Td, 2, 1)
+        mix_diff_Td_QU = np.repeat(mix_diff_Td_QU, 2, 0)
+
+    mix_diff_Bs = np.array(mix_diff_Bs)
+    mix_diff_Bs_QU = np.repeat(mix_diff_Bs, 2, 1)
     mix_diff_Bs_QU = np.repeat(mix_diff_Bs_QU, 2, 0)
+
+    # mixing_matrix = np.repeat(A_, 2, 0)
 
     for i in range(np.shape(mix_diff_Bd_QU)[0]):
         for j in range(np.shape(mix_diff_Bd_QU)[1]):
             mix_diff_Bd_QU[i, j] = mix_diff_Bd_QU[i, j] *\
                 (((i % 2)-(1-j % 2)) % 2)
-            mix_diff_Td_QU[i, j] = mix_diff_Td_QU[i, j] *\
-                (((i % 2)-(1-j % 2)) % 2)
+
             mix_diff_Bs_QU[i, j] = mix_diff_Bs_QU[i, j] *\
                 (((i % 2)-(1-j % 2)) % 2)
-
-    return mix_diff_Bd_QU, mix_diff_Td_QU, mix_diff_Bs_QU
+            if not model.fix_temp:
+                mix_diff_Td_QU[i, j] = mix_diff_Td_QU[i, j] *\
+                    (((i % 2)-(1-j % 2)) % 2)
+    if not model.fix_temp:
+        return mix_diff_Bd_QU, mix_diff_Td_QU, mix_diff_Bs_QU
+    else:
+        return mix_diff_Bd_QU, mix_diff_Bs_QU
 
 
 def diff_diff_mixing_matrix(model):
-    diff_element = model.A.diff_diff(model.frequencies,
-                                     model.spectral_indices[0], model.spectral_indices[1], model.spectral_indices[2])
+    if not model.fix_temp:
+        diff_element = model.A.diff_diff(model.frequencies,
+                                         model.spectral_indices[0], model.spectral_indices[1], model.spectral_indices[2])
+    else:
+        print('TEMP FIXED')
+        diff_element = model.A.diff_diff(model.frequencies,
+                                         model.spectral_indices[0], model.spectral_indices[1])
     mix_diff_diff_Bd = []
-    mix_diff_diff_Td = []
+    if not model.fix_temp:
+        mix_diff_diff_Td = []
     mix_diff_diff_Bs = []
     for i in range(len(model.frequencies)):
         mix_diff_diff_Bd.append([0, diff_element[0][0][i][0], 0])
-        mix_diff_diff_Td.append([0, diff_element[1][1][i][0], 0])
-        mix_diff_diff_Bs.append([0, 0, diff_element[2][2][i][0]])
+        if not model.fix_temp:
+            mix_diff_diff_Td.append([0, diff_element[1][1][i][0], 0])
+            mix_diff_diff_Bs.append([0, 0, diff_element[2][2][i][0]])
+        else:
+            mix_diff_diff_Bs.append([0, 0, diff_element[1][1][i][0]])
+
     mix_diff_diff_Bd = np.array(mix_diff_diff_Bd)
-    mix_diff_diff_Td = np.array(mix_diff_diff_Td)
-    mix_diff_diff_Bs = np.array(mix_diff_diff_Bs)
-    # mixing_matrix = np.repeat(A_, 2, 0)
-
     mix_diff_diff_Bd_QU = np.repeat(mix_diff_diff_Bd, 2, 1)
-    mix_diff_diff_Td_QU = np.repeat(mix_diff_diff_Td, 2, 1)
-    mix_diff_diff_Bs_QU = np.repeat(mix_diff_diff_Bs, 2, 1)
-
     mix_diff_diff_Bd_QU = np.repeat(mix_diff_diff_Bd_QU, 2, 0)
-    mix_diff_diff_Td_QU = np.repeat(mix_diff_diff_Td_QU, 2, 0)
+
+    if not model.fix_temp:
+        mix_diff_diff_Td = np.array(mix_diff_diff_Td)
+        mix_diff_diff_Td_QU = np.repeat(mix_diff_diff_Td, 2, 1)
+        mix_diff_diff_Td_QU = np.repeat(mix_diff_diff_Td_QU, 2, 0)
+
+    mix_diff_diff_Bs = np.array(mix_diff_diff_Bs)
+    mix_diff_diff_Bs_QU = np.repeat(mix_diff_diff_Bs, 2, 1)
     mix_diff_diff_Bs_QU = np.repeat(mix_diff_diff_Bs_QU, 2, 0)
+    # mixing_matrix = np.repeat(A_, 2, 0)
 
     for i in range(np.shape(mix_diff_diff_Bd_QU)[0]):
         for j in range(np.shape(mix_diff_diff_Bd_QU)[1]):
             mix_diff_diff_Bd_QU[i, j] = mix_diff_diff_Bd_QU[i, j] *\
                 (((i % 2)-(1-j % 2)) % 2)
-            mix_diff_diff_Td_QU[i, j] = mix_diff_diff_Td_QU[i, j] *\
-                (((i % 2)-(1-j % 2)) % 2)
+            if not model.fix_temp:
+                mix_diff_diff_Td_QU[i, j] = mix_diff_diff_Td_QU[i, j] *\
+                    (((i % 2)-(1-j % 2)) % 2)
+
             mix_diff_diff_Bs_QU[i, j] = mix_diff_diff_Bs_QU[i, j] *\
                 (((i % 2)-(1-j % 2)) % 2)
-
-    return mix_diff_diff_Bd_QU, mix_diff_diff_Td_QU, mix_diff_diff_Bs_QU
+    if not model.fix_temp:
+        return mix_diff_diff_Bd_QU, mix_diff_diff_Td_QU, mix_diff_diff_Bs_QU
+    else:
+        return mix_diff_diff_Bd_QU, mix_diff_diff_Bs_QU
 
 
 def diff_miscal_matrix(model):
@@ -160,6 +189,23 @@ def effectiv_diff_mixing_matrix(diff_index, diff_list, model):
     return effetiv_diff
 
 
+def effectiv_diff_mixing_matrix_new(diff_index, diff_list, model, params):
+    if params[diff_index] == 'miscal':
+        effetiv_diff = diff_list[diff_index].dot(model.mixing_matrix).dot(model.bir_matrix)
+
+    elif params[diff_index] == 'birefringence':
+        effetiv_diff = model.miscal_matrix.dot(model.mixing_matrix).dot(diff_list[diff_index])
+
+    elif params[diff_index] == 'spectral':
+        effetiv_diff = model.miscal_matrix.dot(diff_list[diff_index]).dot(model.bir_matrix)
+
+    else:
+        print('parameter not recognized, miscal, birefringence or spectral only')
+        return None
+
+    return effetiv_diff
+
+
 def effectiv_doublediff_mixing_matrix(diff_index1, diff_index2, diff_list, diff_diff_list, model):
     # print(diff_index1, diff_index2)
     if diff_index1 == diff_index2:
@@ -223,17 +269,70 @@ def effectiv_doublediff_mixing_matrix(diff_index1, diff_index2, diff_list, diff_
     return double_diff_matrix
 
 
-def fisher(ddt, model, diff_list, diff_diff_list):
-    AtNm1A = model.mix_effectiv.T.dot(model.inv_noise).dot(model.mix_effectiv)
+def effectiv_doublediff_mixing_matrix_new(diff_index1, diff_index2, diff_list, diff_diff_list, model, params):
+    if diff_index1 == diff_index2:
+        if params[diff_index1] == 'miscal':
+            miscal = diff_diff_list[diff_index1]
+        else:
+            miscal = model.miscal_matrix
+
+        if params[diff_index1] == 'birefringence':
+            bir = diff_diff_list[diff_index1]
+        else:
+            bir = model.bir_matrix
+
+        if params[diff_index1] == 'spectral':
+            spectral = diff_diff_list[diff_index1]
+        else:
+            spectral = model.mixing_matrix
+        double_diff_matrix = miscal.dot(spectral).dot(bir)
+        return double_diff_matrix
+
+    if params[diff_index1] == 'miscal' and params[diff_index2] == 'miscal':
+        return np.zeros([len(model.frequencies)*2, 6])
+    elif params[diff_index1] == 'spectral' and params[diff_index2] == 'spectral':
+        return np.zeros([len(model.frequencies)*2, 6])
+    else:
+        if params[diff_index1] == 'miscal':
+            miscal = diff_list[diff_index1]
+        elif params[diff_index2] == 'miscal':
+            miscal = diff_list[diff_index2]
+        else:
+            miscal = model.miscal_matrix
+
+        if params[diff_index1] == 'birefringence':
+            bir = diff_list[diff_index1]
+        elif params[diff_index2] == 'birefringence':
+            bir = diff_list[diff_index2]
+        else:
+            bir = model.bir_matrix
+
+        if params[diff_index1] == 'spectral':
+            spectral = diff_list[diff_index1]
+        elif params[diff_index2] == 'spectral':
+            spectral = diff_list[diff_index2]
+        else:
+            spectral = model.mixing_matrix
+
+        double_diff_matrix = miscal.dot(spectral).dot(bir)
+    return double_diff_matrix
+
+
+def fisher(ddt, model, diff_list, diff_diff_list, Ninvfactor=1):
+    AtNm1A = model.mix_effectiv.T.dot(model.inv_noise*Ninvfactor).dot(model.mix_effectiv)
     invAtNm1A = np.linalg.inv(AtNm1A)
-    Nm1A_invAtNm1A = model.inv_noise.dot(model.mix_effectiv).dot(invAtNm1A)
-    AtNm1 = model.mix_effectiv.T.dot(model.inv_noise)
+    Nm1A_invAtNm1A = Ninvfactor*model.inv_noise.dot(model.mix_effectiv).dot(invAtNm1A)
+    AtNm1 = model.mix_effectiv.T.dot(model.inv_noise*Ninvfactor)
     # IPython.embed()
-    fisher_matrix = np.empty([len(model.frequencies)+1+2, len(model.frequencies)+1+2])
-    for i in range(len(model.frequencies)+1+2):
+    param_num = len(diff_list)
+    # fisher_matrix = np.empty([len(model.frequencies)+1+2, len(model.frequencies)+1+2])
+    fisher_matrix = np.empty([param_num, param_num])
+    # for i in range(len(model.frequencies)+1+2):
+    for i in range(param_num):
         # for ii in range(len(model.frequencies)+1+2):
-        for ii in range(i, len(model.frequencies)+1+2):
-            print('i=', i, 'ii=', ii)
+        # for ii in range(i, len(model.frequencies)+1+2):
+        for ii in range(i, param_num):
+            # print('i=', i, 'ii=', ii)
             # if i == ii:
             #     fisher_matrix[i][ii] = None
             # else:
@@ -248,13 +347,13 @@ def fisher(ddt, model, diff_list, diff_diff_list):
             # print('A_ii', A_ii)
             # print('A_i_ii', A_i_ii)
 
-            AitP = A_i.T.dot(model.projection)
+            AitP = A_i.T.dot(Ninvfactor*model.projection)
 
-            term1 = model.projection.dot(A_ii).dot(invAtNm1A).dot(AitP)
-            term2 = Nm1A_invAtNm1A.dot(A_i_ii.T).dot(model.projection)
+            term1 = Ninvfactor*model.projection.dot(A_ii).dot(invAtNm1A).dot(AitP)
+            term2 = Nm1A_invAtNm1A.dot(A_i_ii.T).dot(Ninvfactor*model.projection)
             term3 = Nm1A_invAtNm1A.dot(A_ii.T).dot(Nm1A_invAtNm1A).dot(AitP)
             term4 = Nm1A_invAtNm1A.dot(A_i.T).dot(
-                Nm1A_invAtNm1A).dot(A_ii.T).dot(model.projection)
+                Nm1A_invAtNm1A).dot(A_ii.T).dot(Ninvfactor*model.projection)
             term5 = Nm1A_invAtNm1A.dot(AitP).dot(A_ii).dot(invAtNm1A).dot(AtNm1)
             # term5 = Nm1A_invAtNm1A.dot(AitP).dot(A_ii).dot(
             #     invAtNm1A).dot(model.mix_effectiv.T).dot(model.projection)
@@ -262,7 +361,11 @@ def fisher(ddt, model, diff_list, diff_diff_list):
             tot = term1 + term2 - term3 - term4 - term5
 
             # trace = np.einsum('ij,ji...m->m', tot, ddt)
-            sum_trace = np.einsum('ij,ji...m->', tot, ddt)
+            if len(ddt.shape) == 3:
+                sum_trace = np.einsum('ij,ji...m->', tot, ddt)
+            else:
+                sum_trace = np.einsum('ij,ji->...', tot, ddt)
+
             fisher_matrix[i][ii] = -sum_trace*2
 
             fisher_matrix[ii][i] = -sum_trace*2
@@ -295,6 +398,56 @@ def fisher(ddt, model, diff_list, diff_diff_list):
     return fisher_matrix
 
 
+def fisher_new(ddt, model, diff_list, diff_diff_list, params, Ninvfactor=1):
+    AtNm1A = model.mix_effectiv.T.dot(model.inv_noise*Ninvfactor).dot(model.mix_effectiv)
+    invAtNm1A = np.linalg.inv(AtNm1A)
+    Nm1A_invAtNm1A = Ninvfactor*model.inv_noise.dot(model.mix_effectiv).dot(invAtNm1A)
+    AtNm1 = model.mix_effectiv.T.dot(model.inv_noise*Ninvfactor)
+    param_num = len(diff_list)
+    fisher_matrix = np.empty([param_num, param_num])
+    for i in range(param_num):
+        for ii in range(i, param_num):
+            A_i = effectiv_diff_mixing_matrix_new(i, diff_list, model, params)
+            A_ii = effectiv_diff_mixing_matrix_new(ii, diff_list, model, params)
+            A_i_ii = effectiv_doublediff_mixing_matrix_new(
+                i, ii, diff_list, diff_diff_list, model, params)
+
+            AitP = A_i.T.dot(Ninvfactor*model.projection)
+
+            term1 = Ninvfactor*model.projection.dot(A_ii).dot(invAtNm1A).dot(AitP)
+            term2 = Nm1A_invAtNm1A.dot(A_i_ii.T).dot(Ninvfactor*model.projection)
+            term3 = Nm1A_invAtNm1A.dot(A_ii.T).dot(Nm1A_invAtNm1A).dot(AitP)
+            term4 = Nm1A_invAtNm1A.dot(A_i.T).dot(
+                Nm1A_invAtNm1A).dot(A_ii.T).dot(Ninvfactor*model.projection)
+            term5 = Nm1A_invAtNm1A.dot(AitP).dot(A_ii).dot(invAtNm1A).dot(AtNm1)
+
+            tot = term1 + term2 - term3 - term4 - term5
+
+            if len(ddt.shape) == 3:
+                sum_trace = np.einsum('ij,ji...m->', tot, ddt)
+            else:
+                sum_trace = np.einsum('ij,ji->...', tot, ddt)
+
+            fisher_matrix[i][ii] = -sum_trace*2
+
+            fisher_matrix[ii][i] = -sum_trace*2
+            '''
+            WARNING : Factor 2 for +transpose term, see Clara's thesis
+            '''
+
+            if i == 11 and ii == 2:
+                sterm1 = term_fisher_debug(term1, ddt)
+                sterm2 = term_fisher_debug(term2, ddt)
+                sterm3 = term_fisher_debug(term3, ddt)
+                sterm4 = term_fisher_debug(term4, ddt)
+                sterm5 = term_fisher_debug(term5, ddt)
+                # sterm5_clara = term_fisher_debug(term5_clara, ddt)
+
+                IPython.embed()
+
+    return fisher_matrix
+
+
 def term_fisher_debug(term, ddt):
     dot = term.dot(ddt)
     sum_trace = np.sum(np.trace(dot))
@@ -302,13 +455,13 @@ def term_fisher_debug(term, ddt):
 
 
 def main():
-    # true_miscal_angles = np.arange(0.0, 0.5, 0.5/6)*u.rad
-    true_miscal_angles = np.array([0]*6)*u.rad
+    true_miscal_angles = np.arange(0.0, 0.5, 0.5/6)*u.rad
+    # true_miscal_angles = np.array([0]*6)*u.rad
 
     prior_precision = (1*u.arcmin).to(u.rad).value
-    nside = 512
+    nside = 128
 
-    nsteps = 5000
+    nsteps = 11000
     discard = 1000
     birefringence = 1
     spectral = 1
@@ -316,7 +469,7 @@ def main():
     prior_flag = True
     sampled_miscal_freq = 6
 
-    wMPI2 = 1
+    wMPI2 = 0
     if wMPI2:
         comm = MPI.COMM_WORLD
         mpi_rank = MPI.COMM_WORLD.Get_rank()
@@ -384,14 +537,14 @@ def main():
         print('spectral = ', spectral)
     """
 
-    data, model = pix.data_and_model_quick(miscal_angles_array=true_miscal_angles,
+    data, model = pix.data_and_model_quick(miscal_angles_array=true_miscal_angles, bir_angle=0.1*u.rad,
                                            frequencies_array=V3.so_V3_SA_bands(),
                                            frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside)
     # data.get_mask(path='/home/baptiste/BBPipe')
-
+    IPython.embed()
     path_BB_local = '/home/baptiste/BBPipe'
     path_BB_NERSC = '/global/homes/j/jost/BBPipe'
-    path_BB = path_BB_NERSC
+    path_BB = path_BB_local
 
     mask_ = hp.read_map(path_BB + "/test_mapbased_param/mask_04000.fits")
     mask = hp.ud_grade(mask_, nside)
@@ -406,13 +559,22 @@ def main():
 
     diff_list = diff_miscal_matrix(model)
     diff_list.append(diff_bir_matrix(model))
-    mix_diff_Bd_QU, mix_diff_Td_QU, mix_diff_Bs_QU = diff_mixing_matrix(model)
+    if not model.fix_temp:
+        mix_diff_Bd_QU, mix_diff_Td_QU, mix_diff_Bs_QU = diff_mixing_matrix(model)
+    else:
+        mix_diff_Bd_QU, mix_diff_Bs_QU = diff_mixing_matrix(model)
+
     diff_list.append(mix_diff_Bd_QU)
     diff_list.append(mix_diff_Bs_QU)
 
     diff_diff_list = diff_diff_miscal_matrix(model)
     diff_diff_list.append(diff_diff_bir_matrix(model))
-    mix_diff_diff_Bd_QU, mix_diff_diff_Td_QU, mix_diff_diff_Bs_QU = diff_diff_mixing_matrix(model)
+    if not model.fix_temp:
+        mix_diff_diff_Bd_QU, mix_diff_diff_Td_QU, mix_diff_diff_Bs_QU = diff_diff_mixing_matrix(
+            model)
+    else:
+        mix_diff_diff_Bd_QU, mix_diff_diff_Bs_QU = diff_diff_mixing_matrix(model)
+
     diff_diff_list.append(mix_diff_diff_Bd_QU)
     diff_diff_list.append(mix_diff_diff_Bs_QU)
     start = time.time()
@@ -428,8 +590,8 @@ def main():
     # fisher_matrix = copy.deepcopy(fisher_prior)
 
     path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/run02032021//'
-    path_local = './prior_tests/'
-    path = path_NERSC
+    path_local = './test11k/'
+    path = path_local
 
     file_name, file_name_raw = pix.get_file_name_sample(
         sampled_miscal_freq, nsteps, discard,

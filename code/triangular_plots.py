@@ -56,7 +56,7 @@ def multivariate_gaussian_sigmaInv(pos, mu, Sigma_inv):
     # Sigma_inv = np.linalg.inv(Sigma)
     print('sigma_det =', Sigma_det)
     print('sigma_inv = ', Sigma_inv)
-    N = np.sqrt((2*np.pi)**n * Sigma_det)
+    N = np.sqrt(((2*np.pi)**n) * Sigma_det)
     # This einsum call calculates (x-mu)T.Sigma-1.(x-mu) in a vectorized
     # way across all the input variables.
     fac = np.einsum('...k,kl,...l->...', pos-mu, Sigma_inv, pos-mu)
@@ -74,7 +74,7 @@ nside = 512
 fisher_flag = True
 plot_2d_fisher_flag = True
 
-wMPI2 = 1
+wMPI2 = 0
 if wMPI2:
     comm = MPI.COMM_WORLD
     mpi_rank = MPI.COMM_WORLD.Get_rank()
@@ -149,9 +149,9 @@ prior_precision = (1*u.arcmin).to(u.rad).value
 sampled_miscal_freq = 6
 
 path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/run02032021/'
-path_local = './prior_tests/'
-
-path = path_NERSC
+# path_local = './prior_tests/'
+path_local = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/run02032021/'
+path = path_local
 
 file_name, file_name_raw = pixel_based_angle_estimation.get_file_name_sample(
     sampled_miscal_freq, nsteps, discard,
@@ -188,7 +188,10 @@ flat_samples = np.load(path+file_name)
 #     sampled_birefringence=birefringence, prior=True,
 #     prior_precision=prior_precision,
 #     prior_index=prior_indices, spectral_index=spectral)
-# IPython.embed()
+'''DEBUG PARAM :'''
+flat_samples = flat_samples[:, :3]
+ndim = 3
+prior_indices = [0, 3]
 
 fig = corner.corner(flat_samples, labels=labels,
                     truths=true_miscal_angles,
@@ -215,7 +218,7 @@ if fisher_flag:
     # cov = np.load('sqrt_inv_fisher_all0_priorposition0to6_prior1arcmin_nside128_mask0400.npy')
     cov = np.load(path+'sqrt_inv_fisher_prior_'+file_name)
 
-    for ii in range(9):
+    for ii in range(ndim):
         ploted_prior = ii
         print(ii)
         # axes[ploted_prior, ploted_prior].axvline(
@@ -235,32 +238,56 @@ if plot_2d_fisher_flag:
     fisher_matrix = np.load(path+'fisher_prior_'+file_name)
 
     nsteps = 1000
-    for i in range(9):
-        for ii in range(i, 9):
+    for i in range(ndim):
+        for ii in range(i, ndim):
             print(i, ii)
             min_range_i = min(flat_samples[:, i])
             max_range_i = max(flat_samples[:, i])
+            abs_amplitude_i = np.max([np.abs(min_range_i-true_miscal_angles[i]),
+                                      np.abs(max_range_i-true_miscal_angles[i])])
 
             min_range_ii = min(flat_samples[:, ii])
             max_range_ii = max(flat_samples[:, ii])
+            abs_amplitude_ii = np.max(
+                [np.abs(min_range_ii-true_miscal_angles[ii]), np.abs(max_range_ii-true_miscal_angles[ii])])
+
             x_range_i = np.arange(min_range_i, max_range_i, (max_range_i - min_range_i)/nsteps)
             x_range_ii = np.arange(min_range_ii, max_range_ii, (max_range_ii - min_range_ii)/nsteps)
 
+            abs_x_range_i = np.arange(
+                true_miscal_angles[i]-abs_amplitude_i, true_miscal_angles[i]+abs_amplitude_i, 2*abs_amplitude_i/nsteps)
+            abs_x_range_ii = np.arange(
+                true_miscal_angles[ii]-abs_amplitude_ii, true_miscal_angles[ii]+abs_amplitude_ii, 2*abs_amplitude_ii/nsteps)
+
             grid_i, grid_ii = np.meshgrid(x_range_i, x_range_ii, indexing='xy')
+            abs_grid_i, abs_grid_ii = np.meshgrid(abs_x_range_i, abs_x_range_ii, indexing='xy')
 
             mu = np.array([true_miscal_angles[i], true_miscal_angles[ii]])
             pos = np.empty(grid_i.shape + (2,))
             pos[:, :, 0] = grid_i
             pos[:, :, 1] = grid_ii
+            abs_pos = np.empty(grid_i.shape + (2,))
+            abs_pos[:, :, 0] = abs_grid_i
+            abs_pos[:, :, 1] = abs_grid_ii
+
             fisher_i_ii = np.array([[fisher_matrix[i, i], fisher_matrix[ii, i]],
                                     [fisher_matrix[i, ii], fisher_matrix[ii, ii]]])
             fisher_2D_gaussian = multivariate_gaussian_sigmaInv(pos, mu, fisher_i_ii)
-            if i == 7 and ii == 8:
+            if i == 1 and ii == 2:
                 print(fisher_2D_gaussian)
-            cs2 = axes[ii, i].contour(grid_i, grid_ii, fisher_2D_gaussian, colors='g',
-                                      linestyles='--')
+                cs2 = axes[ii, i].contour(grid_i, grid_ii, fisher_2D_gaussian, colors='r',
+                                          linestyles='--')
+                abs_fisher_2D_gaussian = multivariate_gaussian_sigmaInv(abs_pos, mu, fisher_i_ii)
+                abs_cs2 = axes[ii, i].contour(abs_grid_i, abs_grid_ii, abs_fisher_2D_gaussian, colors='b',
+                                              linestyles='--')
+                IPython.embed()
+            else:
+                cs2 = axes[ii, i].contour(grid_i, grid_ii, fisher_2D_gaussian, colors='g',
+                                          linestyles='--')
 # plt.savefig(path+'test_2d_fisher')
 # file_name_save = '5000Samples_200discard_MiscalFrom0to6_PriorPosition0to6_Precision2p9e-04rad_BirSampled_SpectralSampled_MaskTest_nside512.npy'
+IPython.embed()
+
 if plot_2d_fisher_flag:
     plt.savefig(path + file_name[:-4] + '_fisher2D')
 elif fisher_flag:
