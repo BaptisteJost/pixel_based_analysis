@@ -1,4 +1,4 @@
-import IPython
+# import IPython
 import healpy as hp
 import numpy as np
 import time
@@ -34,8 +34,11 @@ S_cmb = np.einsum(
     'isp,jsp->ij', map_array_reshaped[1:], map_array_reshaped[1:])/nsim_cmb/hp.nside2npix(nside)
 print('total time=', time.time()-start)
 
-IPython.embed()
-np.save('S_cmb_n{}_s{}_r0_b0p01.npy'.format(nside, nsim_cmb), S_cmb)
-cl_list_average = np.mean(cl_list, axis=0)
-map_mean = np.mean(map_list, axis=0)
-cl_mapaverage = hp.anafast(map_mean)
+S_cmb_name = 'S_cmb_n{}_s{}_r{:1}_b{:1.1e}'.format(nside, nsim_cmb, r, bire_angle.value).replace(
+    '.', 'p') + '.npy'
+
+np.save(S_cmb_name, S_cmb)
+# IPython.embed()
+# cl_list_average = np.mean(cl_list, axis=0)
+# map_mean = np.mean(map_list, axis=0)
+# cl_mapaverage = hp.anafast(map_mean)

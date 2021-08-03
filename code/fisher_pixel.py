@@ -78,7 +78,6 @@ def diff_diff_mixing_matrix(model):
         diff_element = model.A.diff_diff(model.frequencies,
                                          model.spectral_indices[0], model.spectral_indices[1], model.spectral_indices[2])
     else:
-        print('TEMP FIXED')
         diff_element = model.A.diff_diff(model.frequencies,
                                          model.spectral_indices[0], model.spectral_indices[1])
     mix_diff_diff_Bd = []

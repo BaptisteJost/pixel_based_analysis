@@ -1,49 +1,32 @@
-# from scipy.integrate import quad, dblquad
 import time
 import IPython
 import numpy as np
-# import bjlib.likelihood_SO as lSO
 from astropy import units as u
 import bjlib.V3calc as V3
-import cosmology_copy as fgcos
 import fisher_pixel as fshp
 import pixel_based_angle_estimation as pix
 import copy
 import healpy as hp
 import matplotlib.pyplot as plt
-from fgbuster.component_model import CMB, Dust, Synchrotron
 import bjlib.lib_project as lib
 from scipy.linalg import logm
 from pixel_based_angle_estimation import get_chi_squared_local
 from scipy.optimize import minimize
 import numdifftools as nd
 from scipy.integrate import simps
+import bjlib.class_faraday as cf
 
 
-def get_diff_list(model):
-    diff_list = fshp.diff_miscal_matrix(model)
-    diff_list.append(fshp.diff_bir_matrix(model))
-    if not model.fix_temp:
-        mix_diff_Bd_QU, mix_diff_Td_QU, mix_diff_Bs_QU = fshp.diff_mixing_matrix(model)
-    else:
-        mix_diff_Bd_QU, mix_diff_Bs_QU = fshp.diff_mixing_matrix(model)
-
-    diff_list.append(mix_diff_Bd_QU)
-    diff_list.append(mix_diff_Bs_QU)
-    return diff_list
-
-
-def get_diff_list_new(model, params):
+def get_diff_list(model, params):
     params_array = np.array(params)
+
     if sum(params_array == 'miscal') != 0:
-        print('miscal')
         diff_list = fshp.diff_miscal_matrix(model)
+
     if sum(params_array == 'birefringence'):
-        print('bire')
         diff_list.append(fshp.diff_bir_matrix(model))
 
     if sum(params_array == 'spectral') != 0:
-        print('spectral')
         if not model.fix_temp:
             mix_diff_Bd_QU, mix_diff_Td_QU, mix_diff_Bs_QU = fshp.diff_mixing_matrix(model)
         else:
@@ -56,21 +39,7 @@ def get_diff_list_new(model, params):
     return diff_list
 
 
-def get_diff_diff_list(model):
-    diff_diff_list = fshp.diff_diff_miscal_matrix(model)
-    diff_diff_list.append(fshp.diff_diff_bir_matrix(model))
-    if not model.fix_temp:
-        mix_diff_diff_Bd_QU, mix_diff_diff_Td_QU, mix_diff_diff_Bs_QU = fshp.diff_diff_mixing_matrix(
-            model)
-    else:
-        mix_diff_diff_Bd_QU, mix_diff_diff_Bs_QU = fshp.diff_diff_mixing_matrix(
-            model)
-    diff_diff_list.append(mix_diff_diff_Bd_QU)
-    diff_diff_list.append(mix_diff_diff_Bs_QU)
-    return diff_diff_list
-
-
-def get_diff_diff_list_new(model, params):
+def get_diff_diff_list(model, params):
     params_array = np.array(params)
     if sum(params_array == 'miscal') != 0:
         diff_diff_list = fshp.diff_diff_miscal_matrix(model)
@@ -97,53 +66,10 @@ def get_W(model):
     return invAtNm1A.dot(model.mix_effectiv.T).dot(model.inv_noise)
 
 
-def get_diff_W(model, diff_list, W=None, invAtNm1A=None, return_elements=False):
+def get_diff_W(model, diff_list, params, W=None, invAtNm1A=None, return_elements=False):
     if invAtNm1A is None:
-        start = time.time()
         AtNm1A = model.mix_effectiv.T.dot(model.inv_noise).dot(model.mix_effectiv)
         invAtNm1A = np.linalg.inv(AtNm1A)
-        print('time computing invANA = ', time.time()-start)
-    if W is None:
-        AtN = model.mix_effectiv.T.dot(model.inv_noise)
-        W = invAtNm1A.dot(AtN)
-
-    diff_W = []
-    invANAdBpBt_list = []
-    A_i_list = []
-    AitNm1_list = []
-    term1_list = []
-    term2_list = []
-
-    param_num = len(diff_list)
-    for i in range(param_num):
-        A_i = fshp.effectiv_diff_mixing_matrix(i, diff_list, model)
-        B = A_i.T.dot(model.inv_noise).dot(model.mix_effectiv)
-        BpBt = B+B.T
-        invANABBT = invAtNm1A.dot(BpBt)
-        AitNm1 = A_i.T.dot(model.inv_noise)
-
-        term1 = invANABBT.dot(W)
-        term2 = invAtNm1A.dot(AitNm1)
-        diff_W_i = -term1+term2
-
-        diff_W.append(diff_W_i)
-        invANAdBpBt_list.append(invANABBT)
-        A_i_list.append(A_i)
-        AitNm1_list.append(AitNm1)
-        term1_list.append(term1)
-        term2_list.append(term2)
-    if return_elements:
-        return diff_W, invANAdBpBt_list, A_i_list, AitNm1_list, term1_list, term2_list
-
-    return diff_W
-
-
-def get_diff_W_new(model, diff_list, params, W=None, invAtNm1A=None, return_elements=False):
-    if invAtNm1A is None:
-        start = time.time()
-        AtNm1A = model.mix_effectiv.T.dot(model.inv_noise).dot(model.mix_effectiv)
-        invAtNm1A = np.linalg.inv(AtNm1A)
-        print('time computing invANA = ', time.time()-start)
     if W is None:
         AtN = model.mix_effectiv.T.dot(model.inv_noise)
         W = invAtNm1A.dot(AtN)
@@ -180,45 +106,11 @@ def get_diff_W_new(model, diff_list, params, W=None, invAtNm1A=None, return_elem
     return diff_W
 
 
-def get_diff_diff_W(model, diff_list, diff_diff_list, W, invANAdBpBt_list, A_i_list,
+def get_diff_diff_W(model, diff_list, diff_diff_list, params, W, invANAdBpBt_list, A_i_list,
                     AitNm1_list, term1_list, term2_list, invAtNm1A=None):
     if invAtNm1A is None:
         AtNm1A = model.mix_effectiv.T.dot(model.inv_noise).dot(model.mix_effectiv)
         invAtNm1A = np.linalg.inv(AtNm1A)
-    start = time.time()
-    diff_diff_W_ = []
-    # param_num = np.shape(diff_list)[0]
-    param_num = len(diff_list)
-
-    for i in range(param_num):
-        for ii in range(param_num):
-            A_i_ii = fshp.effectiv_doublediff_mixing_matrix(i, ii, diff_list, diff_diff_list, model)
-            D = A_i_ii.T.dot(model.inv_noise).dot(model.mix_effectiv) + \
-                AitNm1_list[i].dot(A_i_list[ii])
-            DpDt = D+D.T
-
-            term1 = invANAdBpBt_list[ii].dot(invANAdBpBt_list[i]).dot(W)
-            term2 = invANAdBpBt_list[i].dot(invANAdBpBt_list[ii]).dot(W)
-            term3 = invANAdBpBt_list[ii].dot(term2_list[i])
-            term4 = invANAdBpBt_list[i].dot(term2_list[ii])
-            term5 = invAtNm1A.dot(DpDt).dot(W)
-            term6 = invAtNm1A.dot(A_i_ii.T).dot(model.inv_noise)
-            tot = term1+term2 - term3 - term4 - term5 + term6
-            diff_diff_W_.append(tot)
-    shape_diff_diff = np.shape(diff_diff_W_)
-    # IPython.embed()
-    print('time diff diff W = ', time.time()-start)
-    diff_diff_W = np.reshape(
-        diff_diff_W_, [param_num, param_num, shape_diff_diff[1], shape_diff_diff[2]])
-    return diff_diff_W
-
-
-def get_diff_diff_W_new(model, diff_list, diff_diff_list, params, W, invANAdBpBt_list, A_i_list,
-                        AitNm1_list, term1_list, term2_list, invAtNm1A=None):
-    if invAtNm1A is None:
-        AtNm1A = model.mix_effectiv.T.dot(model.inv_noise).dot(model.mix_effectiv)
-        invAtNm1A = np.linalg.inv(AtNm1A)
-    start = time.time()
     diff_diff_W_ = []
     param_num = len(diff_list)
 
@@ -240,7 +132,6 @@ def get_diff_diff_W_new(model, diff_list, diff_diff_list, params, W, invANAdBpBt
             diff_diff_W_.append(tot)
     shape_diff_diff = np.shape(diff_diff_W_)
     # IPython.embed()
-    print('time diff diff W = ', time.time()-start)
     diff_diff_W = np.reshape(
         diff_diff_W_, [param_num, param_num, shape_diff_diff[1], shape_diff_diff[2]])
     return diff_diff_W
@@ -286,7 +177,6 @@ def get_ys_alms(y_Q, y_U, lmax):
 def get_ys_Cls(X_alms, Y_alms, lmax, fsky=1):
     if len(X_alms.shape) == 3 or len(Y_alms.shape) == 3:
         if len(X_alms.shape) == len(Y_alms.shape):
-            print('double dB')
             Cls = np.zeros((X_alms.shape[0], X_alms.shape[0], 3, lmax+1))
             # Cls2 = np.zeros((X_alms.shape[0], X_alms.shape[0], 3, lmax+1))
 
@@ -300,7 +190,6 @@ def get_ys_Cls(X_alms, Y_alms, lmax, fsky=1):
                     # Cls2[dBx, dBy] = spectra2
                     # return Cls, Cls2
         else:
-            print('simple + dB')
             if len(X_alms.shape) < len(Y_alms.shape):
                 print('ERROR: second argument cannot have larger dimension than first')
                 return None
@@ -312,138 +201,29 @@ def get_ys_Cls(X_alms, Y_alms, lmax, fsky=1):
                 Cls[dBx] = spectra
 
     else:
-        print('simple')
         spectra_ = hp.alm2cl(X_alms, Y_alms, lmax=lmax, nspec=5)
         spectra = np.array([spectra_[1], spectra_[2], spectra_[4]])
         Cls = spectra
 
-    return Cls/fsky
+    return Cls / fsky
 
 
-def get_residuals(model, fg_freq_maps, sigma, lmax, fsky, cmb_spectra=None, true_A_cmb=None):
+def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spectra=None, true_A_cmb=None):
     '''============================computing Ws============================'''
-    diff_list = get_diff_list(model)
-    diff_diff_list = get_diff_diff_list(model)
-    # IPython.embed()
-    start = time.time()
+    diff_list = get_diff_list(model, params)
+    diff_diff_list = get_diff_diff_list(model, params)
+
     W = get_W(model)
-    diff_W, invANAdBpBt_list, A_i_list, AitNm1_list, term1_list, term2_list = get_diff_W(
-        model, diff_list, W=W, invAtNm1A=None, return_elements=True)
-    diff_diff_W = get_diff_diff_W(model, diff_list, diff_diff_list, W, invANAdBpBt_list, A_i_list,
+    diff_W, invANAdBpBt_list, A_i_list, AitNm1_list, term1_list, term2_list = \
+        get_diff_W(
+            model, diff_list, params, W=W, invAtNm1A=None, return_elements=True)
+    diff_diff_W = get_diff_diff_W(model, diff_list, diff_diff_list, params, W, invANAdBpBt_list, A_i_list,
                                   AitNm1_list, term1_list, term2_list, invAtNm1A=None)
-    print('time W, WdB, WdBdB = ', time.time()-start)
-
-    diff_W = np.array(diff_W)
-    #
-    # params = ['miscal']*6
-    # # params.append('birefringence')
-    # params.append('spectral')
-    # params.append('spectral')
-    # diff_list_new = get_diff_list_new(model, params)
-    # diff_diff_list_new = get_diff_diff_list_new(model, params)
-    # # IPython.embed()
-    # diff_W, invANAdBpBt_list_new, A_i_list_new, AitNm1_list_new, term1_list_new, term2_list_new = get_diff_W_new(
-    #     model, diff_list_new, params, W=W, invAtNm1A=None, return_elements=True)
-    # diff_diff_W = get_diff_diff_W_new(model, diff_list_new, diff_diff_list_new, params, W, invANAdBpBt_list_new, A_i_list_new,
-    #                                   AitNm1_list_new, term1_list_new, term2_list_new, invAtNm1A=None)
-    # diff_W = np.array(diff_W)
-
-    '''===========================Computing ys==========================='''
-    print('WARNING FSKY !!!!')
-
-    y_Q = W[0].dot(fg_freq_maps)
-    y_U = W[1].dot(fg_freq_maps)
-    Y_Q = diff_W[:, 0].dot(fg_freq_maps)
-    Y_U = diff_W[:, 1].dot(fg_freq_maps)
-    V_Q = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 0])
-    V_U = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 1])
-    z_Q = V_Q.dot(fg_freq_maps)
-    z_U = V_U.dot(fg_freq_maps)
-
-    if cmb_spectra is not None:
-        WA_cmb = W[:2].dot(true_A_cmb) - np.identity(2)
-        W_dB_cmb = diff_W[:, :2, :].dot(true_A_cmb)
-        W_dBdB_cmb = diff_diff_W[:, :, :2, :].dot(true_A_cmb)
-        Cl_matrix = np.zeros((2, 2, len(cmb_spectra[0])))
-        Cl_matrix[0, 0] = cmb_spectra[1]
-        Cl_matrix[1, 1] = cmb_spectra[1]
-        Cl_matrix2 = np.zeros((2, 2, len(cmb_spectra[0])))
-        Cl_matrix2[0, 0] = cmb_spectra[1]
-        Cl_matrix2[1, 1] = cmb_spectra[2]
-        yy_cmb1 = np.einsum('ij,ijl,ij->ijl', WA_cmb.T, Cl_matrix, WA_cmb)
-        YY_cmb1 = np.einsum('ij,ijl,ij->ijl', W_dB_cmb[0].T, Cl_matrix, W_dB_cmb[0])
-        yy_cmb2 = np.einsum('ij,ijl,ij->ijl', WA_cmb.T, Cl_matrix2, WA_cmb)
-        YY_cmb2 = np.einsum('ij,ijl,ij->ijl', W_dB_cmb[0].T, Cl_matrix2, W_dB_cmb[0])
-
-        YY_cmb_matrix = np.zeros([sigma.shape[0], sigma.shape[0], Cl_matrix.shape[0],
-                                  Cl_matrix.shape[1], Cl_matrix.shape[2]])
-        for i in range(sigma.shape[0]):
-            for ii in range(sigma.shape[0]):
-                YY_cmb_matrix[i, ii] = np.einsum(
-                    'ij,ijl,ij->ijl', W_dB_cmb[i].T, Cl_matrix, W_dB_cmb[ii])
-
-        YY_cmb_matrix2 = np.zeros([sigma.shape[0], sigma.shape[0], Cl_matrix.shape[0],
-                                   Cl_matrix.shape[1], Cl_matrix.shape[2]])
-        for i in range(sigma.shape[0]):
-            for ii in range(sigma.shape[0]):
-                YY_cmb_matrix2[i, ii] = np.einsum(
-                    'ij,ijl,ij->ijl', W_dB_cmb[i].T, Cl_matrix2, W_dB_cmb[ii])
-        V_cmb = np.einsum('ij,ij...->...', sigma, W_dBdB_cmb[:, :])
-        yz_cmb = np.einsum('ji,jkl,km->iml', V_cmb, Cl_matrix, WA_cmb)
-        yz_cmb2 = np.einsum('ji,jkl,km->iml', V_cmb, Cl_matrix2, WA_cmb)
-        # zy_cmb = np.einsum('ji,jkl,km->iml', WA_cmb, Cl_matrix, V_cmb)
-
-        Yy_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
-                           Cl_matrix.shape[1], Cl_matrix.shape[2]])
-        for i in range(sigma.shape[0]):
-            Yy_cmb[i] = np.einsum('ij,jkl,km->iml', W_dB_cmb[i].T, Cl_matrix2, WA_cmb)
-
-        Yz_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
-                           Cl_matrix.shape[1], Cl_matrix.shape[2]])
-        for i in range(sigma.shape[0]):
-            Yz_cmb[i] = np.einsum('ij,jkl,km->iml', W_dB_cmb[i].T, Cl_matrix2, V_cmb)
-
-    '''===========================computing alms==========================='''
-
-    y_alms = get_ys_alms(y_Q=y_Q, y_U=y_U, lmax=lmax)
-    Y_alms = get_ys_alms(y_Q=Y_Q, y_U=Y_U, lmax=lmax)
-    z_alms = get_ys_alms(y_Q=z_Q, y_U=z_U, lmax=lmax)
-    '''===========================computing Cls==========================='''
-
-    yy = get_ys_Cls(y_alms, y_alms, lmax, fsky)
-    YY = get_ys_Cls(Y_alms, Y_alms, lmax, fsky)
-    yz = get_ys_Cls(y_alms, z_alms, lmax, fsky)
-    zy = get_ys_Cls(z_alms, y_alms, lmax, fsky)
-
-    Yy = get_ys_Cls(Y_alms, y_alms, lmax, fsky)
-    Yz = get_ys_Cls(Y_alms, z_alms, lmax, fsky)  # attention à checker
-    '''========================computing residuals========================'''
-
-    stat = np.einsum('ij, ij... -> ...', sigma, YY)
-    bias = yy + yz + zy
-    var = stat**2 + 2 * np.einsum('i..., ij, j... -> ...', Yy, sigma, Yy)
-    # Clres = bias + stat
-
-    return stat, bias, var
-
-
-def get_residuals_new(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spectra=None, true_A_cmb=None):
-    '''============================computing Ws============================'''
-    diff_list = get_diff_list_new(model, params)
-    diff_diff_list = get_diff_diff_list_new(model, params)
-    # IPython.embed()
-    start = time.time()
-    W = get_W(model)
-    diff_W, invANAdBpBt_list, A_i_list, AitNm1_list, term1_list, term2_list = get_diff_W_new(
-        model, diff_list, params, W=W, invAtNm1A=None, return_elements=True)
-    diff_diff_W = get_diff_diff_W_new(model, diff_list, diff_diff_list, params, W, invANAdBpBt_list, A_i_list,
-                                      AitNm1_list, term1_list, term2_list, invAtNm1A=None)
-    print('time W, WdB, WdBdB = ', time.time()-start)
 
     diff_W = np.array(diff_W)
 
     '''===========================Computing ys==========================='''
-    print('WARNING FSKY !!!!')
+    # print('WARNING FSKY !!!!')
 
     y_Q = W[0].dot(fg_freq_maps)
     y_U = W[1].dot(fg_freq_maps)
@@ -457,13 +237,13 @@ def get_residuals_new(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_
     if cmb_spectra is not None:
         Cl_cmb = {}
         # IPython.embed()
-        cl_substract = 0
+        # cl_substract = 0
         # WA_cmb = W[:2].dot(true_A_cmb) - (1-cl_substract)*np.identity(2)
         WA_cmb = W[:2].dot(true_A_cmb)
         # WA_cmb_box = W[:2].dot(true_A_cmb) - np.ones([2, 2])
         W_dB_cmb = diff_W[:, :2, :].dot(true_A_cmb)
         W_dBdB_cmb = diff_diff_W[:, :, :2, :].dot(true_A_cmb)
-        print('WARNING INPUT BIREFRINGENCE IS NOT TAKEN INTO ACCOUNT')
+        # print('WARNING INPUT BIREFRINGENCE IS NOT TAKEN INTO ACCOUNT')
         Cl_matrix = np.zeros((2, 2, len(cmb_spectra[0])))
         Cl_matrix[0, 0] = cmb_spectra[1]
         Cl_matrix[1, 1] = cmb_spectra[2]
@@ -472,8 +252,9 @@ def get_residuals_new(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_
             Cl_matrix[0, 1] = cmb_spectra[4]
 
         # yy_cmb1 = np.einsum('ij,jkl,km->iml', WA_cmb.T, Cl_matrix, WA_cmb)
-        yy_cmb2 = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_matrix, WA_cmb.T)
-        yy_cmb = yy_cmb2 - Cl_matrix * cl_substract
+        # yy_cmb2 = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_matrix, WA_cmb.T)
+        # yy_cmb = yy_cmb2 - Cl_matrix * cl_substract
+        yy_cmb = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_matrix, WA_cmb.T)
 
         YY_cmb_matrix = np.zeros([sigma.shape[0], sigma.shape[0], Cl_matrix.shape[0],
                                   Cl_matrix.shape[1], Cl_matrix.shape[2]])
@@ -575,7 +356,6 @@ def get_residuals_new(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_
                     temp_cl[:, 1] = Cl_cmb[key][:, 1, 1]
                     temp_cl[:, 2] = Cl_cmb[key][:, 0, 1]
                     Cl_out[key] = Cl_fg[key] + temp_cl
-            print('key_counter = ', key_counter)
             return Cl_out
 
         def Cl_adder_matrix(Cl_fg, Cl_cmb, lmin, lmax):
@@ -629,11 +409,6 @@ def get_residuals_new(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_
         bias = Cl['yy'] + Cl['yz'] + Cl['zy']
         var = stat**2 + 2 * np.einsum('i..., ij, j... -> ...', Cl['Yy'], sigma, Cl['Yy'])
         return stat, bias, var, Cl
-    #
-    # # Clres = bias + stat
-    # if cmb_spectra is not None:
-    #     return stat, bias, var, Cl, Cl_cmb1, Cl_cmb2
-    # return stat, bias, var, Cl
 
 
 def cosmo_likelihood(Cl_model, Cl_data, Cl_residuals, sigma_res, ell, fsky):
@@ -691,63 +466,7 @@ def cosmo_likelihood(Cl_model, Cl_data, Cl_residuals, sigma_res, ell, fsky):
     return trCinvC + trECinvC + logdetC
 
 
-def cosmo_likelihood_nodeprojection(Cl_model, Cl_data, Cl_residuals, sigma_res, ell, fsky):
-    # Cl data should be CMB + noise !
-    residuals_factor = 1
-    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_res, Cl_residuals['YY'])*residuals_factor
-    # cross_terms = +np.einsum('ij,jkl->ikl', WA_cmb, Cl_cmb_rot_matrix) + np.einsum(
-    #     'ijl,jk->ikl', Cl_cmb_rot_matrix, WA_cmb.T)  # Cl_cmb_rot_matrix.dot(WA_cmb.T)
-    Cl_model_total = Cl_model+tr_SigmaYY  # Cl_model should be CMB + Noise !
-    # Cl_model_total = Cl_model  # Cl_model should be CMB + Noise !
-    inv_model = np.linalg.inv(Cl_model_total.T).T
-    dof = (2 * ell + 1) * fsky
-    dof_over_Cl = dof * inv_model
-
-    # first_dep = dof_over_C  l*(Cl_data+tr_SigmaYY)
-    # first_term = np.sum(np.trace(first_dep))
-    # first_term = np.trace(np.einsum('ijl,kmn->im', dof_over_Cl, (Cl_data+tr_SigmaYY)))
-    # IPython.embed()
-    first_term_ell = []
-    second_term_ell = []
-    logm_list = []
-    # logm_list_sum = []
-    for l in range(dof_over_Cl.shape[-1]):
-        first_term_ell.append(dof_over_Cl[:, :, l].dot((Cl_data+tr_SigmaYY)[:, :, l]))
-        second_term_ell.append(dof_over_Cl[:, :, l].dot(
-            (Cl_residuals['yy'] + Cl_residuals['zy'] + Cl_residuals['yz'])[:, :, l]))
-        logm_list.append(logm(Cl_model_total[:, :, l]))
-        # logm_list_sum.append(logm(Cl_model_total[:, :, l])*dof[l])
-
-    first_term_ell = np.array(first_term_ell)
-    second_term_ell = np.array(second_term_ell)*residuals_factor
-    logm_list = np.array(logm_list)
-    # logm_list_sum = np.array(logm_list_sum)
-
-    first_term = np.sum(np.trace(first_term_ell.T))
-    second_term = np.sum(np.trace(second_term_ell.T))
-    logdetC = np.sum(dof*np.trace(logm_list.T))
-    # first_sum = np.sum(first_term_ell)
-    # second_sum = np.sum(second_term_ell)
-    # logdetC_sum = np.sum(logm_list_sum)
-    # IPython.embed()
-    # plt.plot(ell, (Cl_data+tr_SigmaYY)[0, 1], label='data EB: CMB + noise + stat')
-    # plt.plot(ell, Cl_model_total[0, 1], label='model EB: CMB + noise + stat res', linestyle='-.')
-    # plt.plot(ell, tr_SigmaYY[0, 1], label='EB stat res')
-    # plt.plot(ell, (Cl_residuals['yy'] + Cl_residuals['zy'] +
-    #                Cl_residuals['yz'])[0, 1], label='EB syst res')
-    # plt.legend()
-    # plt.plot(np.abs(first_term_ell[:, 0, 0]))
-    # plt.plot(np.abs(first_term_ell[:, 1, 1]))
-    # plt.plot(np.abs(second_term_ell[:, 0, 1]))
-    # plt.plot(np.abs(second_term_ell[:, 1, 0]))
-
-    # return first_term, second_term, logdetC
-    # return first_term + second_term + logdetC, (Cl_residuals['yy'] + Cl_residuals['zy'] + Cl_residuals['yz']), tr_SigmaYY
-    return first_term + second_term + logdetC
-    # return first_sum + second_sum + logdetC_sum
-
-
-def cosmo_likelihood_nodeprojection_new(Cl_model_total, Cl_data, ell, fsky):
+def cosmo_likelihood_nodeprojection(Cl_model_total, Cl_data, ell, fsky):
 
     inv_model = np.linalg.inv(Cl_model_total.T).T
     dof = (2 * ell + 1) * fsky
@@ -768,46 +487,7 @@ def cosmo_likelihood_nodeprojection_new(Cl_model_total, Cl_data, ell, fsky):
     return first_term + logdetC
 
 
-'''
-def cosmo_likelihood_nodeprojection_new(Cl_model, Cl_residuals, Cl_noise_matrix, sigma_res, ell, fsky, WA_cmb):
-    residuals_factor = 1
-    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_res, Cl_residuals['YY'])*residuals_factor
-    # cross_terms = +np.einsum('ij,jkl->ikl', WA_cmb, Cl_model) + np.einsum(
-    #     'ijl,jk->ikl', Cl_model, WA_cmb.T) - Cl_model
-
-    # wacaw = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_model, WA_cmb.T)
-    # Cl_model_total = wacaw + Cl_noise_matrix + tr_SigmaYY  # + cross_terms
-
-    Cl_model_total = Cl_model + Cl_noise_matrix + tr_SigmaYY  # + cross_terms
-
-    inv_model = np.linalg.inv(Cl_model_total.T).T
-    dof = (2 * ell + 1) * fsky
-    dof_over_Cl = dof * inv_model
-
-    Cl_data = Cl_residuals['yy'] + Cl_residuals['zy'] + \
-        Cl_residuals['yz'] + tr_SigmaYY + Cl_noise_matrix
-    first_term_ell = []
-    second_term_ell = []
-    logm_list = []
-    for l in range(dof_over_Cl.shape[-1]):
-        first_term_ell.append(dof_over_Cl[:, :, l].dot((Cl_data)[:, :, l]))
-        # second_term_ell.append(dof_over_Cl[:, :, l].dot(
-        #     (Cl_residuals['yy'] + Cl_residuals['zy'] + Cl_residuals['yz'])[:, :, l]))
-        logm_list.append(logm(Cl_model_total[:, :, l]))
-
-    first_term_ell = np.array(first_term_ell)
-    # second_term_ell = np.array(second_term_ell)*residuals_factor
-    logm_list = np.array(logm_list)
-
-    first_term = np.sum(np.trace(first_term_ell.T))
-    # second_term = np.sum(np.trace(second_term_ell.T))
-    logdetC = np.sum(dof*np.trace(logm_list.T))
-
-    return first_term + logdetC
-'''
-
-
-def likelihood_exploration_new(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky):
+def likelihood_exploration(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky):
     r = cosmo_params[0]
 
     beta = cosmo_params[1]*u.rad
@@ -826,67 +506,9 @@ def likelihood_exploration_new(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, t
 
     Cl_model_total = Cl_cmb_rot_matrix + Cl_noise_matrix + tr_SigmaYY
 
-    likelihood = cosmo_likelihood_nodeprojection_new(
+    likelihood = cosmo_likelihood_nodeprojection(
         Cl_model_total, Cl_data, ell, fsky)
 
-    return likelihood
-
-
-'''
-def likelihood_exploration_new(cosmo_params, Cl_fid, Cl_residuals, Cl_noise_matrix, sigma_res, ell, fsky, WA_cmb):
-    r = cosmo_params[0]
-
-    beta = cosmo_params[1]*u.rad
-    print('r', r, ' beta ', beta)
-    Cl_cmb_model = np.zeros([4, Cl_fid['EE'].shape[0]])
-    Cl_cmb_model[1] = copy.deepcopy(Cl_fid['EE'])
-    Cl_cmb_model[2] = copy.deepcopy(Cl_fid['BlBl'])*1 + copy.deepcopy(Cl_fid['BuBu']) * r
-
-    Cl_cmb_rot = lib.cl_rotation(Cl_cmb_model.T, beta).T
-
-    Cl_cmb_rot_matrix = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
-    Cl_cmb_rot_matrix[0, 0] = copy.deepcopy(Cl_cmb_rot[1])
-    Cl_cmb_rot_matrix[1, 1] = copy.deepcopy(Cl_cmb_rot[2])
-    Cl_cmb_rot_matrix[1, 0] = copy.deepcopy(Cl_cmb_rot[4])
-    Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
-
-    # Cl_model = copy.deepcopy(Cl_cmb_rot_matrix) + copy.deepcopy(Cl_noise_matrix)
-
-    likelihood = cosmo_likelihood_nodeprojection_new(
-        Cl_cmb_rot_matrix, Cl_residuals, Cl_noise_matrix, sigma_res, ell, fsky, WA_cmb)
-
-    return likelihood
-'''
-
-
-def likelihood_exploration(cosmo_params, Cl_fid, Cl_data, Cl_residuals, Cl_noise_matrix, sigma_res, ell, fsky):
-    r = cosmo_params[0]
-
-    beta = cosmo_params[1]*u.rad
-    print('r', r, ' beta ', beta)
-    Cl_cmb_model = np.zeros([4, Cl_fid['EE'].shape[0]])
-    Cl_cmb_model[1] = copy.deepcopy(Cl_fid['EE'])
-    Cl_cmb_model[2] = copy.deepcopy(Cl_fid['BlBl'])*1 + copy.deepcopy(Cl_fid['BuBu']) * r
-    # path_BB = '/home/baptiste/BBPipe'
-    # Cl_cmb_model = copy.deepcopy(get_Cl_cmbBB(
-    #     Alens=1, r=r, path_BB=path_BB))[:, ell[0]:ell[-1]+1]
-
-    Cl_cmb_rot = lib.cl_rotation(Cl_cmb_model.T, beta).T
-
-    Cl_cmb_rot_matrix = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
-    Cl_cmb_rot_matrix[0, 0] = copy.deepcopy(Cl_cmb_rot[1])
-    Cl_cmb_rot_matrix[1, 1] = copy.deepcopy(Cl_cmb_rot[2])
-    Cl_cmb_rot_matrix[1, 0] = copy.deepcopy(Cl_cmb_rot[4])
-    Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
-
-    Cl_model = copy.deepcopy(Cl_cmb_rot_matrix) + copy.deepcopy(Cl_noise_matrix)
-    # IPython.embed()
-    # likelihood, syst_res, stat_res = cosmo_likelihood_nodeprojection(
-    # Cl_model, Cl_data, Cl_residuals, sigma_res, ell, fsky)
-    likelihood = cosmo_likelihood_nodeprojection(
-        Cl_model, Cl_data, Cl_residuals, sigma_res, ell, fsky)
-
-    # return likelihood, Cl_model-(Cl_data+residuals)
     return likelihood
 
 
@@ -896,7 +518,6 @@ def get_Cl_cmbBB(Alens=1., r=0.001, path_BB='.'):
     if Alens != 1.:
         power_spectrum[2] *= Alens
     if r:
-        print('spectra with r')
         power_spectrum += r *\
             hp.read_cl(
                 path_BB + '/test_mapbased_param/Cls_Planck2018_unlensed_scalar_and_tensor_r1.fits')[:, :4000]
@@ -904,13 +525,10 @@ def get_Cl_cmbBB(Alens=1., r=0.001, path_BB='.'):
 
 
 def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2):
-    print('WARNING: get noise sensitivity hardcoded')
-    # print('WARNING: get noise beam correction ??')
     V3_results = V3.so_V3_SA_noise(sensitiviy_mode, one_over_f_mode,
                                    SAC_yrs_LF=1, f_sky=fsky, ell_max=lmax, beam_corrected=True)
     noise_nl = np.repeat(V3_results[1], 2, 0)
     ell_noise = V3_results[0]
-    # IPython.embed()
     frequencies = V3.so_V3_SA_bands()
     nl_inv = 1/noise_nl
     AtNA = np.einsum('fi, fl, fj -> lij', A, nl_inv, A)
@@ -932,17 +550,6 @@ def multivariate_gaussian(pos, mu, Sigma):
     fac = np.einsum('...k,kl,...l->...', pos-mu, Sigma_inv, pos-mu)
 
     return np.exp(-fac / 2) / N
-
-
-def sigma_area(L_grid, param_grid, sigma=0.68):
-    ind = np.argmax(L_grid)
-    param_fit = param_grid[ind]
-    param_vec_pos = param_grid[param_grid > param_fit]
-    plike_pos = L_grid[param_grid > param_fit]
-    cum = np.cumsum(plike_pos)
-    cum /= cum[-1]
-    sigma_param = param_vec_pos[np.argmin(np.abs(cum - sigma))] - param_fit
-    return sigma_param
 
 
 def get_ranges(r_bounds, beta_bounds, r_true, beta_true, results_mini, nsteps_r, nsteps_beta):
@@ -970,8 +577,8 @@ def get_chi2_grid(r_range, beta_range, Cl_fid, Cl_data,
     likelihood_grid = []
     for r in r_range:
         for beta in beta_range:
-            likelihood_grid.append(likelihood_exploration_new([r, beta], Cl_fid, Cl_data,
-                                                              Cl_noise_matrix, tr_SigmaYY, ell, fsky))
+            likelihood_grid.append(likelihood_exploration([r, beta], Cl_fid, Cl_data,
+                                                          Cl_noise_matrix, tr_SigmaYY, ell, fsky))
     likelihood_grid = np.array(likelihood_grid)
     chi2_mesh = np.reshape(likelihood_grid, (-1, len(beta_range)))
 
@@ -1056,61 +663,56 @@ def main():
     #     1: optimistic
     #     2: none
 
-    r_true = 0.0
+    r_true = 0.01
     r_str = '_r0p01'
     beta_true = 0.01 * u.rad
 
-    initmodel_miscal = np.array([0]*6)*u.rad
     true_miscal_angles = np.array([0]*6)*u.rad
     # true_miscal_angles = np.arange(0.1, 0.5, 0.4/6)*u.rad
 
+    prior = True
+    prior_indices = []
+    if prior:
+        prior_indices = [2, 4]
+    prior_precision = (0.1 * u.deg).to(u.rad).value
+    prior_str = '{:1.1e}rad'.format(prior_precision)
+
     save_path = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/SOf2f/'
 
-    data, model1 = pix.data_and_model_quick(miscal_angles_array=true_miscal_angles, bir_angle=beta_true,
-                                            frequencies_array=V3.so_V3_SA_bands(),
-                                            frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside,
-                                            sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
-    data1, model = pix.data_and_model_quick(miscal_angles_array=initmodel_miscal, bir_angle=beta_true,
-                                            frequencies_array=V3.so_V3_SA_bands(),
-                                            frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside,
-                                            sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
-    data2, model2 = pix.data_and_model_quick(miscal_angles_array=initmodel_miscal, bir_angle=beta_true,
-                                             frequencies_array=V3.so_V3_SA_bands(),
-                                             frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside,
-                                             sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
-    model3 = pix.get_model(miscal_angles_array=initmodel_miscal, bir_angle=beta_true,
-                           frequencies_array=V3.so_V3_SA_bands(),
-                           frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1],
-                           nside=nside, spectral_params=[1.59, 20, -3],
-                           sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
-
-    '''===========================getting data==========================='''
     path_BB_local = '/home/baptiste/BBPipe'
     path_BB_NERSC = '/global/homes/j/jost/BBPipe'
     path_BB = path_BB_local
-    if r_true == 0. and beta_true.value == 0.:
-        print('S_cmb r=0, b=0')
-        S_cmb = np.load('S_cmb_n128_s1000_new.npy')
-    elif r_true == 0.01 and beta_true.value == 0.:
-        print('S_cmb r=0.01, b=0')
-        S_cmb = np.load('S_cmb_n128_s1000_r0p01.npy')
 
-    elif r_true == 0.01 and beta_true.value == 0.01:
-        print('S_cmb r=0.01, b=0.01')
-        S_cmb = np.load('S_cmb_n128_s1000_r0p01_b0p01.npy')
+    nsim = 1000
 
-    elif r_true == 0. and beta_true.value == 0.01:
-        print('S_cmb r=0, b=0.01')
-        S_cmb = np.load('S_cmb_n128_s1000_r0_b0p01.npy')
-    else:
-        print('WARNING : No S_CMB available for specified r value, S_CMB(r=0) choosed by default')
-        S_cmb = np.load('S_cmb_n128_s1000_new.npy')
+    '''====================================================================='''
 
-    ASAt = model1.mix_effectiv[:, :2].dot(S_cmb).dot(model1.mix_effectiv[:, :2].T)
+    initmodel_miscal = np.array([0]*6)*u.rad
+
+    data, model_data = pix.data_and_model_quick(miscal_angles_array=true_miscal_angles, bir_angle=beta_true,
+                                                frequencies_array=V3.so_V3_SA_bands(),
+                                                frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside,
+                                                sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
+
+    model = pix.get_model(miscal_angles_array=initmodel_miscal, bir_angle=beta_true,
+                          frequencies_array=V3.so_V3_SA_bands(),
+                          frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1],
+                          nside=nside, spectral_params=[1.59, 20, -3],
+                          sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
+
+    '''===========================getting data==========================='''
+
+    S_cmb_name = 'S_cmb_n{}_s{}_r{:1}_b{:1.1e}'.format(nside, nsim, r_true, beta_true.value).replace(
+        '.', 'p') + '.npy'
+    print(S_cmb_name)
+    S_cmb = np.load(S_cmb_name)
+
+    ASAt = model_data.mix_effectiv[:, :2].dot(S_cmb).dot(model_data.mix_effectiv[:, :2].T)
 
     fg_freq_maps_full = data.miscal_matrix.dot(data.mixing_matrix)[
         :, 2:].dot(data.signal[2:])
     ddt_fg = np.einsum('ik...,...kj->ijk', fg_freq_maps_full, fg_freq_maps_full.T)
+
     data.get_mask(path_BB)
     mask = data.mask
     mask[(mask != 0) * (mask != 1)] = 0
@@ -1120,15 +722,9 @@ def main():
     del fg_freq_maps_full
 
     n_obspix = np.sum(mask == 1)
+    del mask
     F = np.sum(ddt_fg, axis=-1)/n_obspix
     data_model = n_obspix*(F + ASAt + model.noise_covariance)
-
-    prior = True
-    prior_indices = []
-    if prior:
-        prior_indices = [2, 4]
-    prior_precision = (0.1 * u.deg).to(u.rad).value
-    prior_str = '{:1.1e}rad'.format(prior_precision)
 
     angle_array_start = np.array([0., 0., 0., 0., 0., 0., 2, -2.5])
 
@@ -1140,16 +736,14 @@ def main():
         angle_prior = np.array(angle_prior[prior_indices[0]: prior_indices[-1]])
 
     results_min = minimize(get_chi_squared_local, angle_array_start, args=(
-                           data_model, model2, prior, [], angle_prior, False, True, 1, True),
+                           data_model, model, prior, [], angle_prior, False, True, 1, True),
                            bounds=((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (0.5, 2.5), (-5, -1)), tol=1e-18)
-    print('')
-    print(results_min.x)
-
+    # print('')
+    # print(results_min.x)
     # for i in range(6):
     #     results_min.x[i] = (1*u.deg).to(u.rad).value
-
-    print(results_min.x)
-    print('')
+    # print(results_min.x)
+    # print('')
 
     model_results = pix.get_model(results_min.x[: 6], bir_angle=beta_true,
                                   frequencies_array=V3.so_V3_SA_bands(), frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside,
@@ -1172,37 +766,30 @@ def main():
 
     ps_planck = copy.deepcopy(get_Cl_cmbBB(Alens=A_lens_true, r=r_true, path_BB=path_BB))
     spectra_true = lib.cl_rotation(ps_planck.T, beta_true).T
-    Cl_fid = {}
-    Cl_fid['BB'] = get_Cl_cmbBB(Alens=A_lens_true, r=r_true, path_BB=path_BB)[2][lmin:lmax+1]
-    Cl_fid['BuBu'] = get_Cl_cmbBB(Alens=0.0, r=1.0, path_BB=path_BB)[2][lmin:lmax+1]
-    Cl_fid['BlBl'] = get_Cl_cmbBB(Alens=1.0, r=0.0, path_BB=path_BB)[2][lmin:lmax+1]
-    Cl_fid['EE'] = ps_planck[1, lmin:lmax+1]
 
-    diff_list_res = get_diff_list_new(model_results, params)
-    diff_diff_list_res = get_diff_diff_list_new(model_results, params)
-    fisher_matrix_res = fshp.fisher_new(data_model, model_results,
-                                        diff_list_res, diff_diff_list_res, params)
-    fisher_matrix_prior_res = fisher_matrix_res + prior_matrix
-    sigma_res = np.linalg.inv(fisher_matrix_prior_res)
+    diff_list_res = get_diff_list(model_results, params)
+    diff_diff_list_res = get_diff_diff_list(model_results, params)
+    fisher_matrix_spectral = fshp.fisher_new(data_model, model_results,
+                                             diff_list_res, diff_diff_list_res, params)
+    fisher_matrix_prior_spectral = fisher_matrix_spectral + prior_matrix
+    sigma_spectral = np.linalg.inv(fisher_matrix_prior_spectral)
 
-    stat, bias, var, Cl, Cl_cmb, Cl_residuals_matrix, ell, WA_cmb = get_residuals_new(
-        model_results, fg_freq_maps, sigma_res, lmin, lmax, fsky, params,
-        cmb_spectra=spectra_true, true_A_cmb=model1.mix_effectiv[:, :2])
+    stat, bias, var, Cl, Cl_cmb, Cl_residuals_matrix, ell, WA_cmb = get_residuals(
+        model_results, fg_freq_maps, sigma_spectral, lmin, lmax, fsky, params,
+        cmb_spectra=spectra_true, true_A_cmb=model_data.mix_effectiv[:, :2])
 
-    np.save(save_path+'sigma_miscal_eval_pior2to4_'+prior_str+r_str, sigma_res)
+    np.save(save_path+'sigma_miscal_eval_pior2to4_'+prior_str+r_str, sigma_spectral)
     np.save(save_path+'stat_residuals_eval_pior2to4_'+prior_str+r_str, stat)
     np.save(save_path+'bias_residuals_eval_pior2to4_'+prior_str+r_str, bias)
     np.save(save_path+'var_residuals_eval_pior2to4_'+prior_str+r_str, var)
     np.save(save_path+'ell_pior2to4_'+prior_str+r_str, ell)
 
-    spectra_data = copy.deepcopy(ps_planck[:, lmin:lmax+1])
-    # spectra_data[2] = copy.deepcopy(Cl_fid['BB'])
-    spectra_data_rot = lib.cl_rotation(spectra_data.T, beta_true).T
-    spectra_data_matrix = np.zeros([2, 2, spectra_data.shape[-1]])
-    spectra_data_matrix[0, 0] = copy.deepcopy(spectra_data_rot[1])
-    spectra_data_matrix[1, 1] = copy.deepcopy(spectra_data_rot[2])
-    spectra_data_matrix[1, 0] = copy.deepcopy(spectra_data_rot[4])
-    spectra_data_matrix[0, 1] = copy.deepcopy(spectra_data_rot[4])
+    '''=================Init and cosmo likelihood estimation================'''
+    Cl_fid = {}
+    Cl_fid['BB'] = get_Cl_cmbBB(Alens=A_lens_true, r=r_true, path_BB=path_BB)[2][lmin:lmax+1]
+    Cl_fid['BuBu'] = get_Cl_cmbBB(Alens=0.0, r=1.0, path_BB=path_BB)[2][lmin:lmax+1]
+    Cl_fid['BlBl'] = get_Cl_cmbBB(Alens=1.0, r=0.0, path_BB=path_BB)[2][lmin:lmax+1]
+    Cl_fid['EE'] = ps_planck[1, lmin:lmax+1]
 
     Cl_noise, ell_noise = get_noise_Cl(
         model_results.mix_effectiv, lmax+1, fsky, sensitiviy_mode, one_over_f_mode)
@@ -1211,19 +798,42 @@ def main():
     Cl_noise_matrix = np.zeros([2, 2, Cl_noise.shape[0]])
     Cl_noise_matrix[0, 0] = Cl_noise
     Cl_noise_matrix[1, 1] = Cl_noise
-    spectra_data_matrix += copy.deepcopy(Cl_noise_matrix)
 
-    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_res, Cl_residuals_matrix['YY'])
+    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_spectral, Cl_residuals_matrix['YY'])
     Cl_data = Cl_residuals_matrix['yy'] + Cl_residuals_matrix['zy'] + \
         Cl_residuals_matrix['yz'] + tr_SigmaYY + Cl_noise_matrix
 
     cosmo_params = [0, 0.5]
-
-    results_cosmp_new = minimize(likelihood_exploration_new, cosmo_params, args=(
+    results_cosmp = minimize(likelihood_exploration, cosmo_params, args=(
         Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky), bounds=((-0.02, 0.1), (-np.pi/4, np.pi/4)), tol=1e-18)
+    print('results - true cosmo = ', results_cosmp.x - np.array([r_true, beta_true.value]))
 
-    # print('results - true cosmo = ', results_cosmp.x - np.array([r_true, beta_true.value]))
-    print('results - true cosmo = ', results_cosmp_new.x - np.array([r_true, beta_true.value]))
+    '''==================Fisher cosmo likelihood estimation================='''
+
+    Cl_cmb_model_fish = np.zeros([4, Cl_fid['EE'].shape[0]])
+    Cl_cmb_model_fish[1] = copy.deepcopy(Cl_fid['EE'])
+    Cl_cmb_model_fish[2] = copy.deepcopy(Cl_fid['BlBl'])*A_lens_true + \
+        copy.deepcopy(Cl_fid['BuBu']) * results_cosmp.x[0]
+
+    Cl_cmb_model_fish_r = np.zeros([4, Cl_fid['EE'].shape[0]])
+    Cl_cmb_model_fish_r[2] = copy.deepcopy(Cl_fid['BuBu']) * 1
+
+    deriv1 = cf.power_spectra_obj(lib.cl_rotation_derivative(
+        Cl_cmb_model_fish.T, results_cosmp.x[1]*u.rad), ell)
+    deriv_matrix_beta = cf.power_spectra_obj(np.array(
+        [[deriv1.spectra[:, 1], deriv1.spectra[:, 4]],
+         [deriv1.spectra[:, 4], deriv1.spectra[:, 2]]]).T, deriv1.ell)
+
+    deriv_matrix_r = cf.power_spectra_obj(lib.get_dr_cov_bir_EB(
+        Cl_cmb_model_fish_r.T, results_cosmp.x[1]*u.rad).T, ell)
+
+    Cl_data_spectra = cf.power_spectra_obj(Cl_data.T, ell)
+
+    fish_beta = cf.fisher_pws(Cl_data_spectra, deriv_matrix_beta, fsky)
+    fish_r = cf.fisher_pws(Cl_data_spectra, deriv_matrix_r, fsky)
+    fish_beta_r = cf.fisher_pws(Cl_data_spectra, deriv_matrix_beta, fsky, deriv2=deriv_matrix_r)
+    fisher_cosmo_matrix = np.array([[fish_r, fish_beta_r],
+                                    [fish_beta_r, fish_beta]])
 
     IPython.embed()
 
@@ -1238,8 +848,8 @@ def main():
     spectra_fit_rot = lib.cl_rotation(spectra_fit_r.T, results_cosmp.x[1]*u.rad).T
     spectra_bias_rot2 = lib.cl_rotation(spectra_true_r.T, (2*u.deg).to(u.rad)).T
     spectra_bias_rot1 = lib.cl_rotation(spectra_true_r.T, (1*u.deg).to(u.rad)).T
-    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_res, Cl_residuals_matrix['YY'])
-    tr_SigmaYY01d = np.einsum('ij,jimnl->mnl', sigma_res, Cl_residuals_matrix01d['YY'])
+    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_spectral, Cl_residuals_matrix['YY'])
+    tr_SigmaYY01d = np.einsum('ij,jimnl->mnl', sigma_spectral, Cl_residuals_matrix01d['YY'])
 
     # plt.plot(ell, spectra_data_rot[2]*ell*(ell+1)/(2*np.pi), label='BB data')
     plt.plot(ell, spectra_data_matrix[1, 1]*ell*(ell+1)/(2*np.pi), label='BB data + noise')
@@ -1274,8 +884,8 @@ def main():
     ''' plot residuals poster'''
     spectra_prim = copy.deepcopy(get_Cl_cmbBB(Alens=1, r=r_true, path_BB=path_BB))
     spectra_prim_rot1 = lib.cl_rotation(spectra_prim.T, (1*u.deg).to(u.rad)).T
-    tr_SigmaYY_cmb = np.einsum('ij,jimnl->mnl', sigma_res, Cl_cmb['YY'])
-    tr_SigmaYYfg = np.einsum('ij,jiml->ml', sigma_res, Cl['YY'])
+    tr_SigmaYY_cmb = np.einsum('ij,jimnl->mnl', sigma_spectral, Cl_cmb['YY'])
+    tr_SigmaYYfg = np.einsum('ij,jiml->ml', sigma_spectral, Cl['YY'])
 
     spectra_fit_r = copy.deepcopy(get_Cl_cmbBB(
         Alens=A_lens_true, r=results_cosmp.x[0], path_BB=path_BB))
@@ -1365,11 +975,11 @@ def main():
 
     plt.legend()
 
-    hess_fun = nd.Hessian(likelihood_exploration_new)
-    hess_eval = hess_fun(results_cosmp_new.x, Cl_fid, Cl_residuals_matrix,
-                         Cl_noise_matrix, sigma_res, ell, fsky, WA_cmb)
+    hess_fun = nd.Hessian(likelihood_exploration)
+    hess_eval = hess_fun(results_cosmp.x, Cl_fid, Cl_residuals_matrix,
+                         Cl_noise_matrix, sigma_spectral, ell, fsky, WA_cmb)
     sigma_hess = np.sqrt(np.linalg.inv(hess_eval))
-    hess_inv_min = results_cosmp_new.hess_inv(results_cosmp_new.x)
+    hess_inv_min = results_cosmp.hess_inv(results_cosmp.x)
 
     np.save(save_path+'cosmo_mini_pior2to4_'+prior_str+r_str, results_cosmp.x)
     np.save(save_path+'sigma_numdiff_cosmo_eval_pior2to4_'+prior_str+r_str, sigma_hess)
@@ -1383,7 +993,7 @@ def main():
     r_range = np.arange(-0.01, 0.02, 0.021/100)
 
     r_range2, beta_range2, r_index, beta_index, rmini_index, betamini_index = get_ranges(
-        [-0.01, 0.02], [0.0, 0.02], r_true, beta_true.value, results_cosmp_new.x, 100, 1)
+        [-0.01, 0.03], [0.0, 0.02], r_true, beta_true.value, results_cosmp.x, 100, 1)
     # beta_index = 0
     chi2_mesh, betaxx, ryy, pos = get_chi2_grid(r_range2, beta_range2, Cl_fid, Cl_data,
                                                 Cl_noise_matrix, tr_SigmaYY, ell, fsky)
@@ -1391,48 +1001,8 @@ def main():
     sigma2_r, sigma2_beta, sigma2_beta_r = sigma2_int(
         like_mesh, like_r, like_beta, pos, r_index, beta_index)
 
-    import bjlib.class_faraday as cf
-    Cl_cmb_model_fish = np.zeros([4, Cl_fid['EE'].shape[0]])
-    Cl_cmb_model_fish[1] = copy.deepcopy(Cl_fid['EE'])
-    Cl_cmb_model_fish[2] = copy.deepcopy(Cl_fid['BlBl'])*1 + \
-        copy.deepcopy(Cl_fid['BuBu']) * results_cosmp_new.x[0]
-
-    Cl_cmb_model_fish_r = np.zeros([4, Cl_fid['EE'].shape[0]])
-    Cl_cmb_model_fish_r[2] = copy.deepcopy(Cl_fid['BuBu']) * 1
-
-    deriv1 = cf.power_spectra_obj(lib.cl_rotation_derivative(
-        Cl_cmb_model_fish.T, results_cosmp_new.x[1]*u.rad), ell)
-    deriv_matrix_beta = cf.power_spectra_obj(np.array(
-        [[deriv1.spectra[:, 1], deriv1.spectra[:, 4]],
-         [deriv1.spectra[:, 4], deriv1.spectra[:, 2]]]).T, deriv1.ell)
-
-    deriv_matrix_r = cf.power_spectra_obj(lib.get_dr_cov_bir_EB(
-        Cl_cmb_model_fish_r.T, results_cosmp_new.x[1]*u.rad).T, ell)
-
-    Cl_data_spectra = cf.power_spectra_obj(Cl_data.T, ell)
-
-    fish_beta = cf.fisher_pws(Cl_data_spectra, deriv_matrix_beta, fsky)
-    fish_r = cf.fisher_pws(Cl_data_spectra, deriv_matrix_r, fsky)
-    fish_beta_r = cf.fisher_pws(Cl_data_spectra, deriv_matrix_beta, fsky, deriv2=deriv_matrix_r)
-    fisher_matrix = np.array([[fish_r, fish_beta_r],
-                              [fish_beta_r, fish_beta]])
-
     r_range = np.arange(-sigma_hess[0, 0]*3, sigma_hess[0, 0]*3, sigma_hess[0, 0]*6/100)
     beta_range = np.arange(-sigma_hess[1, 1]*3, sigma_hess[1, 1]*3, sigma_hess[1, 1]*6/100)
-
-    start = time.time()
-    likelihood_grid = []
-    for r in r_range:
-        for beta in beta_range:
-            likelihood_grid.append(likelihood_exploration([r, beta], Cl_fid, spectra_data_matrix,
-                                                          Cl_residuals_matrix, Cl_noise_matrix, sigma_res, ell, fsky))
-    likelihood_grid = np.array(likelihood_grid)
-    chi2_mesh = np.reshape(likelihood_grid, (-1, len(beta_range)))
-    print('time gird = ', time.time() - start)
-    betaxx, ryy = np.meshgrid(beta_range, r_range)
-    pos = np.empty(betaxx.shape + (2,))
-    pos[:, :, 0] = betaxx
-    pos[:, :, 1] = ryy
 
     # fisher_2D_gaussian = multivariate_gaussian(
     # pos, results_cosmp.x, np.flip(np.linalg.inv(hess_eval)))
@@ -1442,11 +1012,11 @@ def main():
     #                  np.max(fisher_2D_gaussian), levels=cs.levels, colors='r', linestyles='--')
     sigma_matrix = np.array([[sigma2_r, 0], [0, sigma2_beta]])
     fisher_2D_gaussian = multivariate_gaussian(
-        pos, np.flip(results_cosmp_new.x), np.flip(np.linalg.inv(fisher_matrix)))
+        pos, np.flip(results_cosmp.x), np.flip(np.linalg.inv(fisher_cosmo_matrix)))
     fisher_2D_gaussian *= np.max(like_mesh) / np.max(fisher_2D_gaussian)
 
     int_2D_gaussian = multivariate_gaussian(
-        pos, np.flip(results_cosmp_new.x), np.flip(sigma_matrix))
+        pos, np.flip(results_cosmp.x), np.flip(sigma_matrix))
     int_2D_gaussian *= np.max(like_mesh) / np.max(int_2D_gaussian)
     fig, ax = plt.subplots()
     levels = np.arange(0, 1+1/8, 1/8)*np.max(like_mesh)
@@ -1473,26 +1043,26 @@ def main():
 
     likelihood_grid_r = []
     for r in r_range:
-        likelihood_grid_r.append(likelihood_exploration_new([r, beta_true.value], Cl_fid, Cl_data,
-                                                            Cl_noise_matrix, tr_SigmaYY, ell, fsky))
+        likelihood_grid_r.append(likelihood_exploration([r, beta_true.value], Cl_fid, Cl_data,
+                                                        Cl_noise_matrix, tr_SigmaYY, ell, fsky))
     print('time 1 = ', time.time() - start)
 
     likelihood_grid_r = np.array(likelihood_grid_r)
 
     factor_test = 1.
-    hess_logLr = (r_range - results_cosmp_new.x[0])**2 / \
+    hess_logLr = (r_range - results_cosmp.x[0])**2 / \
         (2 * ((sigma_hess[0, 0]*factor_test)**2)) + np.log((sigma_hess[0, 0]*factor_test)
                                                            * np.sqrt(2*np.pi))
     hess_logLr_norm = hess_logLr - np.min(hess_logLr) + np.min(likelihood_grid_r)
 
     sigma_r_min = np.sqrt(hess_inv_min)[0]
-    hess_logLr_min = (r_range - results_cosmp_new.x[0])**2 / \
+    hess_logLr_min = (r_range - results_cosmp.x[0])**2 / \
         (2 * ((sigma_r_min*factor_test)**2)) + np.log((sigma_r_min*factor_test)
                                                       * np.sqrt(2*np.pi))
     hess_logLr_min_norm = hess_logLr_min - np.min(hess_logLr_min) + np.min(likelihood_grid_r)
 
     sigma_r_int = np.sqrt(sigma2_r)
-    hess_logLr_int = (r_range - results_cosmp_new.x[0])**2 / \
+    hess_logLr_int = (r_range - results_cosmp.x[0])**2 / \
         (2 * ((sigma_r_int*factor_test)**2)) + np.log((sigma_r_int*factor_test)
                                                       * np.sqrt(2*np.pi))
     hess_logLr_int_norm = hess_logLr_int - np.min(hess_logLr_int) + np.min(likelihood_grid_r)
@@ -1500,7 +1070,7 @@ def main():
     plt.plot(r_range, likelihood_grid_r, label='-2logL')
     plt.vlines(r_true, np.min(likelihood_grid_r), np.max(
         likelihood_grid_r), color='black', linestyles='--')
-    plt.vlines(results_cosmp_new.x[0], np.min(likelihood_grid_r), np.max(
+    plt.vlines(results_cosmp.x[0], np.min(likelihood_grid_r), np.max(
         likelihood_grid_r), color='black', linestyles='-.')
 
     plt.plot(r_range, hess_logLr_norm, linestyle='--', label='numdifftool hessian')
@@ -1625,11 +1195,402 @@ def main():
     plt.plot(ell, var_noCMB[2][lmin_plot:lmax_plot]*ell*(ell+1),
              label='var EB noCMB', color='red', linestyle='-.')
 
+    exit()
+
+
+######################################################
+# MAIN CALL
+if __name__ == "__main__":
+    main()
+
+'''================================Purgatory================================'''
+'''
+    spectra_data_matrix = np.zeros([2, 2, lmax+1-lmin])
+    spectra_data_matrix[0, 0] = copy.deepcopy(spectra_true[1][lmin:lmax+1])
+    spectra_data_matrix[1, 1] = copy.deepcopy(spectra_true[2][lmin:lmax+1])
+    spectra_data_matrix[1, 0] = copy.deepcopy(spectra_true[4][lmin:lmax+1])
+    spectra_data_matrix[0, 1] = copy.deepcopy(spectra_true[4][lmin:lmax+1])
+    spectra_data_matrix += copy.deepcopy(Cl_noise_matrix)
+
+    start = time.time()
+    likelihood_grid = []
+    for r in r_range:
+        for beta in beta_range:
+            likelihood_grid.append(likelihood_exploration([r, beta], Cl_fid, spectra_data_matrix,
+                                                          Cl_residuals_matrix, Cl_noise_matrix, sigma_res, ell, fsky))
+    likelihood_grid = np.array(likelihood_grid)
+    chi2_mesh = np.reshape(likelihood_grid, (-1, len(beta_range)))
+    print('time gird = ', time.time() - start)
+    betaxx, ryy = np.meshgrid(beta_range, r_range)
+    pos = np.empty(betaxx.shape + (2,))
+    pos[:, :, 0] = betaxx
+    pos[:, :, 1] = ryy
+'''
+'''
+def cosmo_likelihood_nodeprojection_new(Cl_model, Cl_residuals, Cl_noise_matrix, sigma_res, ell, fsky, WA_cmb):
+    residuals_factor = 1
+    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_res, Cl_residuals['YY'])*residuals_factor
+    # cross_terms = +np.einsum('ij,jkl->ikl', WA_cmb, Cl_model) + np.einsum(
+    #     'ijl,jk->ikl', Cl_model, WA_cmb.T) - Cl_model
+
+    # wacaw = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_model, WA_cmb.T)
+    # Cl_model_total = wacaw + Cl_noise_matrix + tr_SigmaYY  # + cross_terms
+
+    Cl_model_total = Cl_model + Cl_noise_matrix + tr_SigmaYY  # + cross_terms
+
+    inv_model = np.linalg.inv(Cl_model_total.T).T
+    dof = (2 * ell + 1) * fsky
+    dof_over_Cl = dof * inv_model
+
+    Cl_data = Cl_residuals['yy'] + Cl_residuals['zy'] + \
+        Cl_residuals['yz'] + tr_SigmaYY + Cl_noise_matrix
+    first_term_ell = []
+    second_term_ell = []
+    logm_list = []
+    for l in range(dof_over_Cl.shape[-1]):
+        first_term_ell.append(dof_over_Cl[:, :, l].dot((Cl_data)[:, :, l]))
+        # second_term_ell.append(dof_over_Cl[:, :, l].dot(
+        #     (Cl_residuals['yy'] + Cl_residuals['zy'] + Cl_residuals['yz'])[:, :, l]))
+        logm_list.append(logm(Cl_model_total[:, :, l]))
+
+    first_term_ell = np.array(first_term_ell)
+    # second_term_ell = np.array(second_term_ell)*residuals_factor
+    logm_list = np.array(logm_list)
+
+    first_term = np.sum(np.trace(first_term_ell.T))
+    # second_term = np.sum(np.trace(second_term_ell.T))
+    logdetC = np.sum(dof*np.trace(logm_list.T))
+
+    return first_term + logdetC
+'''
+'''
+def cosmo_likelihood_nodeprojection(Cl_model, Cl_data, Cl_residuals, sigma_res, ell, fsky):
+    # Cl data should be CMB + noise !
+    residuals_factor = 1
+    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_res, Cl_residuals['YY'])*residuals_factor
+    # cross_terms = +np.einsum('ij,jkl->ikl', WA_cmb, Cl_cmb_rot_matrix) + np.einsum(
+    #     'ijl,jk->ikl', Cl_cmb_rot_matrix, WA_cmb.T)  # Cl_cmb_rot_matrix.dot(WA_cmb.T)
+    Cl_model_total = Cl_model+tr_SigmaYY  # Cl_model should be CMB + Noise !
+    # Cl_model_total = Cl_model  # Cl_model should be CMB + Noise !
+    inv_model = np.linalg.inv(Cl_model_total.T).T
+    dof = (2 * ell + 1) * fsky
+    dof_over_Cl = dof * inv_model
+
+    # first_dep = dof_over_C  l*(Cl_data+tr_SigmaYY)
+    # first_term = np.sum(np.trace(first_dep))
+    # first_term = np.trace(np.einsum('ijl,kmn->im', dof_over_Cl, (Cl_data+tr_SigmaYY)))
+    # IPython.embed()
+    first_term_ell = []
+    second_term_ell = []
+    logm_list = []
+    # logm_list_sum = []
+    for l in range(dof_over_Cl.shape[-1]):
+        first_term_ell.append(dof_over_Cl[:, :, l].dot((Cl_data+tr_SigmaYY)[:, :, l]))
+        second_term_ell.append(dof_over_Cl[:, :, l].dot(
+            (Cl_residuals['yy'] + Cl_residuals['zy'] + Cl_residuals['yz'])[:, :, l]))
+        logm_list.append(logm(Cl_model_total[:, :, l]))
+        # logm_list_sum.append(logm(Cl_model_total[:, :, l])*dof[l])
+
+    first_term_ell = np.array(first_term_ell)
+    second_term_ell = np.array(second_term_ell)*residuals_factor
+    logm_list = np.array(logm_list)
+    # logm_list_sum = np.array(logm_list_sum)
+
+    first_term = np.sum(np.trace(first_term_ell.T))
+    second_term = np.sum(np.trace(second_term_ell.T))
+    logdetC = np.sum(dof*np.trace(logm_list.T))
+    # first_sum = np.sum(first_term_ell)
+    # second_sum = np.sum(second_term_ell)
+    # logdetC_sum = np.sum(logm_list_sum)
+    # IPython.embed()
+    # plt.plot(ell, (Cl_data+tr_SigmaYY)[0, 1], label='data EB: CMB + noise + stat')
+    # plt.plot(ell, Cl_model_total[0, 1], label='model EB: CMB + noise + stat res', linestyle='-.')
+    # plt.plot(ell, tr_SigmaYY[0, 1], label='EB stat res')
+    # plt.plot(ell, (Cl_residuals['yy'] + Cl_residuals['zy'] +
+    #                Cl_residuals['yz'])[0, 1], label='EB syst res')
+    # plt.legend()
+    # plt.plot(np.abs(first_term_ell[:, 0, 0]))
+    # plt.plot(np.abs(first_term_ell[:, 1, 1]))
+    # plt.plot(np.abs(second_term_ell[:, 0, 1]))
+    # plt.plot(np.abs(second_term_ell[:, 1, 0]))
+
+    # return first_term, second_term, logdetC
+    # return first_term + second_term + logdetC, (Cl_residuals['yy'] + Cl_residuals['zy'] + Cl_residuals['yz']), tr_SigmaYY
+    return first_term + second_term + logdetC
+    # return first_sum + second_sum + logdetC_sum
+'''
+'''
+def get_diff_list(model):
+    diff_list = fshp.diff_miscal_matrix(model)
+    diff_list.append(fshp.diff_bir_matrix(model))
+    if not model.fix_temp:
+        mix_diff_Bd_QU, mix_diff_Td_QU, mix_diff_Bs_QU = fshp.diff_mixing_matrix(model)
+    else:
+        mix_diff_Bd_QU, mix_diff_Bs_QU = fshp.diff_mixing_matrix(model)
+
+    diff_list.append(mix_diff_Bd_QU)
+    diff_list.append(mix_diff_Bs_QU)
+    return diff_list
+
+def get_diff_diff_list(model):
+    diff_diff_list = fshp.diff_diff_miscal_matrix(model)
+    diff_diff_list.append(fshp.diff_diff_bir_matrix(model))
+    if not model.fix_temp:
+        mix_diff_diff_Bd_QU, mix_diff_diff_Td_QU, mix_diff_diff_Bs_QU = fshp.diff_diff_mixing_matrix(
+            model)
+    else:
+        mix_diff_diff_Bd_QU, mix_diff_diff_Bs_QU = fshp.diff_diff_mixing_matrix(
+            model)
+    diff_diff_list.append(mix_diff_diff_Bd_QU)
+    diff_diff_list.append(mix_diff_diff_Bs_QU)
+    return diff_diff_list
+
+
+def get_diff_W(model, diff_list, W=None, invAtNm1A=None, return_elements=False):
+    if invAtNm1A is None:
+        start = time.time()
+        AtNm1A = model.mix_effectiv.T.dot(model.inv_noise).dot(model.mix_effectiv)
+        invAtNm1A = np.linalg.inv(AtNm1A)
+        print('time computing invANA = ', time.time()-start)
+    if W is None:
+        AtN = model.mix_effectiv.T.dot(model.inv_noise)
+        W = invAtNm1A.dot(AtN)
+
+    diff_W = []
+    invANAdBpBt_list = []
+    A_i_list = []
+    AitNm1_list = []
+    term1_list = []
+    term2_list = []
+
+    param_num = len(diff_list)
+    for i in range(param_num):
+        A_i = fshp.effectiv_diff_mixing_matrix(i, diff_list, model)
+        B = A_i.T.dot(model.inv_noise).dot(model.mix_effectiv)
+        BpBt = B+B.T
+        invANABBT = invAtNm1A.dot(BpBt)
+        AitNm1 = A_i.T.dot(model.inv_noise)
+
+        term1 = invANABBT.dot(W)
+        term2 = invAtNm1A.dot(AitNm1)
+        diff_W_i = -term1+term2
+
+        diff_W.append(diff_W_i)
+        invANAdBpBt_list.append(invANABBT)
+        A_i_list.append(A_i)
+        AitNm1_list.append(AitNm1)
+        term1_list.append(term1)
+        term2_list.append(term2)
+    if return_elements:
+        return diff_W, invANAdBpBt_list, A_i_list, AitNm1_list, term1_list, term2_list
+
+    return diff_W
+
+
+def get_diff_diff_W(model, diff_list, diff_diff_list, W, invANAdBpBt_list, A_i_list,
+                    AitNm1_list, term1_list, term2_list, invAtNm1A=None):
+    if invAtNm1A is None:
+        AtNm1A = model.mix_effectiv.T.dot(model.inv_noise).dot(model.mix_effectiv)
+        invAtNm1A = np.linalg.inv(AtNm1A)
+    start = time.time()
+    diff_diff_W_ = []
+    # param_num = np.shape(diff_list)[0]
+    param_num = len(diff_list)
+
+    for i in range(param_num):
+        for ii in range(param_num):
+            A_i_ii = fshp.effectiv_doublediff_mixing_matrix(i, ii, diff_list, diff_diff_list, model)
+            D = A_i_ii.T.dot(model.inv_noise).dot(model.mix_effectiv) + \
+                AitNm1_list[i].dot(A_i_list[ii])
+            DpDt = D+D.T
+
+            term1 = invANAdBpBt_list[ii].dot(invANAdBpBt_list[i]).dot(W)
+            term2 = invANAdBpBt_list[i].dot(invANAdBpBt_list[ii]).dot(W)
+            term3 = invANAdBpBt_list[ii].dot(term2_list[i])
+            term4 = invANAdBpBt_list[i].dot(term2_list[ii])
+            term5 = invAtNm1A.dot(DpDt).dot(W)
+            term6 = invAtNm1A.dot(A_i_ii.T).dot(model.inv_noise)
+            tot = term1+term2 - term3 - term4 - term5 + term6
+            diff_diff_W_.append(tot)
+    shape_diff_diff = np.shape(diff_diff_W_)
+    # IPython.embed()
+    print('time diff diff W = ', time.time()-start)
+    diff_diff_W = np.reshape(
+        diff_diff_W_, [param_num, param_num, shape_diff_diff[1], shape_diff_diff[2]])
+    return diff_diff_W
+'''
+
+'''
+def get_residuals(model, fg_freq_maps, sigma, lmax, fsky, cmb_spectra=None, true_A_cmb=None):
+    ============================computing Ws============================
+    diff_list = get_diff_list(model)
+    diff_diff_list = get_diff_diff_list(model)
+    # IPython.embed()
+    start = time.time()
+    W = get_W(model)
+    diff_W, invANAdBpBt_list, A_i_list, AitNm1_list, term1_list, term2_list = get_diff_W(
+        model, diff_list, W=W, invAtNm1A=None, return_elements=True)
+    diff_diff_W = get_diff_diff_W(model, diff_list, diff_diff_list, W, invANAdBpBt_list, A_i_list,
+                                  AitNm1_list, term1_list, term2_list, invAtNm1A=None)
+    print('time W, WdB, WdBdB = ', time.time()-start)
+
+    diff_W = np.array(diff_W)
+    #
+    # params = ['miscal']*6
+    # # params.append('birefringence')
+    # params.append('spectral')
+    # params.append('spectral')
+    # diff_list_new = get_diff_list_new(model, params)
+    # diff_diff_list_new = get_diff_diff_list_new(model, params)
+    # # IPython.embed()
+    # diff_W, invANAdBpBt_list_new, A_i_list_new, AitNm1_list_new, term1_list_new, term2_list_new = get_diff_W_new(
+    #     model, diff_list_new, params, W=W, invAtNm1A=None, return_elements=True)
+    # diff_diff_W = get_diff_diff_W_new(model, diff_list_new, diff_diff_list_new, params, W, invANAdBpBt_list_new, A_i_list_new,
+    #                                   AitNm1_list_new, term1_list_new, term2_list_new, invAtNm1A=None)
+    # diff_W = np.array(diff_W)
+
+    ===========================Computing ys===========================
+    print('WARNING FSKY !!!!')
+
+    y_Q = W[0].dot(fg_freq_maps)
+    y_U = W[1].dot(fg_freq_maps)
+    Y_Q = diff_W[:, 0].dot(fg_freq_maps)
+    Y_U = diff_W[:, 1].dot(fg_freq_maps)
+    V_Q = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 0])
+    V_U = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 1])
+    z_Q = V_Q.dot(fg_freq_maps)
+    z_U = V_U.dot(fg_freq_maps)
+
+    if cmb_spectra is not None:
+        WA_cmb = W[:2].dot(true_A_cmb) - np.identity(2)
+        W_dB_cmb = diff_W[:, :2, :].dot(true_A_cmb)
+        W_dBdB_cmb = diff_diff_W[:, :, :2, :].dot(true_A_cmb)
+        Cl_matrix = np.zeros((2, 2, len(cmb_spectra[0])))
+        Cl_matrix[0, 0] = cmb_spectra[1]
+        Cl_matrix[1, 1] = cmb_spectra[1]
+        Cl_matrix2 = np.zeros((2, 2, len(cmb_spectra[0])))
+        Cl_matrix2[0, 0] = cmb_spectra[1]
+        Cl_matrix2[1, 1] = cmb_spectra[2]
+        yy_cmb1 = np.einsum('ij,ijl,ij->ijl', WA_cmb.T, Cl_matrix, WA_cmb)
+        YY_cmb1 = np.einsum('ij,ijl,ij->ijl', W_dB_cmb[0].T, Cl_matrix, W_dB_cmb[0])
+        yy_cmb2 = np.einsum('ij,ijl,ij->ijl', WA_cmb.T, Cl_matrix2, WA_cmb)
+        YY_cmb2 = np.einsum('ij,ijl,ij->ijl', W_dB_cmb[0].T, Cl_matrix2, W_dB_cmb[0])
+
+        YY_cmb_matrix = np.zeros([sigma.shape[0], sigma.shape[0], Cl_matrix.shape[0],
+                                  Cl_matrix.shape[1], Cl_matrix.shape[2]])
+        for i in range(sigma.shape[0]):
+            for ii in range(sigma.shape[0]):
+                YY_cmb_matrix[i, ii] = np.einsum(
+                    'ij,ijl,ij->ijl', W_dB_cmb[i].T, Cl_matrix, W_dB_cmb[ii])
+
+        YY_cmb_matrix2 = np.zeros([sigma.shape[0], sigma.shape[0], Cl_matrix.shape[0],
+                                   Cl_matrix.shape[1], Cl_matrix.shape[2]])
+        for i in range(sigma.shape[0]):
+            for ii in range(sigma.shape[0]):
+                YY_cmb_matrix2[i, ii] = np.einsum(
+                    'ij,ijl,ij->ijl', W_dB_cmb[i].T, Cl_matrix2, W_dB_cmb[ii])
+        V_cmb = np.einsum('ij,ij...->...', sigma, W_dBdB_cmb[:, :])
+        yz_cmb = np.einsum('ji,jkl,km->iml', V_cmb, Cl_matrix, WA_cmb)
+        yz_cmb2 = np.einsum('ji,jkl,km->iml', V_cmb, Cl_matrix2, WA_cmb)
+        # zy_cmb = np.einsum('ji,jkl,km->iml', WA_cmb, Cl_matrix, V_cmb)
+
+        Yy_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
+                           Cl_matrix.shape[1], Cl_matrix.shape[2]])
+        for i in range(sigma.shape[0]):
+            Yy_cmb[i] = np.einsum('ij,jkl,km->iml', W_dB_cmb[i].T, Cl_matrix2, WA_cmb)
+
+        Yz_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
+                           Cl_matrix.shape[1], Cl_matrix.shape[2]])
+        for i in range(sigma.shape[0]):
+            Yz_cmb[i] = np.einsum('ij,jkl,km->iml', W_dB_cmb[i].T, Cl_matrix2, V_cmb)
+
+    ===========================computing alms===========================
+
+    y_alms = get_ys_alms(y_Q=y_Q, y_U=y_U, lmax=lmax)
+    Y_alms = get_ys_alms(y_Q=Y_Q, y_U=Y_U, lmax=lmax)
+    z_alms = get_ys_alms(y_Q=z_Q, y_U=z_U, lmax=lmax)
+    ===========================computing Cls===========================
+
+    yy = get_ys_Cls(y_alms, y_alms, lmax, fsky)
+    YY = get_ys_Cls(Y_alms, Y_alms, lmax, fsky)
+    yz = get_ys_Cls(y_alms, z_alms, lmax, fsky)
+    zy = get_ys_Cls(z_alms, y_alms, lmax, fsky)
+
+    Yy = get_ys_Cls(Y_alms, y_alms, lmax, fsky)
+    Yz = get_ys_Cls(Y_alms, z_alms, lmax, fsky)  # attention à checker
+    ========================computing residuals========================
+
+    stat = np.einsum('ij, ij... -> ...', sigma, YY)
+    bias = yy + yz + zy
+    var = stat**2 + 2 * np.einsum('i..., ij, j... -> ...', Yy, sigma, Yy)
+    # Clres = bias + stat
+
+    return stat, bias, var
+'''
+
+'''
+def likelihood_exploration_new(cosmo_params, Cl_fid, Cl_residuals, Cl_noise_matrix, sigma_res, ell, fsky, WA_cmb):
+    r = cosmo_params[0]
+
+    beta = cosmo_params[1]*u.rad
+    print('r', r, ' beta ', beta)
+    Cl_cmb_model = np.zeros([4, Cl_fid['EE'].shape[0]])
+    Cl_cmb_model[1] = copy.deepcopy(Cl_fid['EE'])
+    Cl_cmb_model[2] = copy.deepcopy(Cl_fid['BlBl'])*1 + copy.deepcopy(Cl_fid['BuBu']) * r
+
+    Cl_cmb_rot = lib.cl_rotation(Cl_cmb_model.T, beta).T
+
+    Cl_cmb_rot_matrix = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
+    Cl_cmb_rot_matrix[0, 0] = copy.deepcopy(Cl_cmb_rot[1])
+    Cl_cmb_rot_matrix[1, 1] = copy.deepcopy(Cl_cmb_rot[2])
+    Cl_cmb_rot_matrix[1, 0] = copy.deepcopy(Cl_cmb_rot[4])
+    Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
+
+    # Cl_model = copy.deepcopy(Cl_cmb_rot_matrix) + copy.deepcopy(Cl_noise_matrix)
+
+    likelihood = cosmo_likelihood_nodeprojection_new(
+        Cl_cmb_rot_matrix, Cl_residuals, Cl_noise_matrix, sigma_res, ell, fsky, WA_cmb)
+
+    return likelihood
+'''
+
+'''
+def likelihood_exploration(cosmo_params, Cl_fid, Cl_data, Cl_residuals, Cl_noise_matrix, sigma_res, ell, fsky):
+    r = cosmo_params[0]
+
+    beta = cosmo_params[1]*u.rad
+    print('r', r, ' beta ', beta)
+    Cl_cmb_model = np.zeros([4, Cl_fid['EE'].shape[0]])
+    Cl_cmb_model[1] = copy.deepcopy(Cl_fid['EE'])
+    Cl_cmb_model[2] = copy.deepcopy(Cl_fid['BlBl'])*1 + copy.deepcopy(Cl_fid['BuBu']) * r
+    # path_BB = '/home/baptiste/BBPipe'
+    # Cl_cmb_model = copy.deepcopy(get_Cl_cmbBB(
+    #     Alens=1, r=r, path_BB=path_BB))[:, ell[0]:ell[-1]+1]
+
+    Cl_cmb_rot = lib.cl_rotation(Cl_cmb_model.T, beta).T
+
+    Cl_cmb_rot_matrix = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
+    Cl_cmb_rot_matrix[0, 0] = copy.deepcopy(Cl_cmb_rot[1])
+    Cl_cmb_rot_matrix[1, 1] = copy.deepcopy(Cl_cmb_rot[2])
+    Cl_cmb_rot_matrix[1, 0] = copy.deepcopy(Cl_cmb_rot[4])
+    Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
+
+    Cl_model = copy.deepcopy(Cl_cmb_rot_matrix) + copy.deepcopy(Cl_noise_matrix)
+    # IPython.embed()
+    # likelihood, syst_res, stat_res = cosmo_likelihood_nodeprojection(
+    # Cl_model, Cl_data, Cl_residuals, sigma_res, ell, fsky)
+    likelihood = cosmo_likelihood_nodeprojection(
+        Cl_model, Cl_data, Cl_residuals, sigma_res, ell, fsky)
+
+    # return likelihood, Cl_model-(Cl_data+residuals)
+    return likelihood
+'''
+'''
     stat_full, bias_full, var_full = get_residuals(model, fg_freq_maps_full, sigma_full, lmax, 1)
 
     Clres1 = stat + bias
 
-    '''============================computing Ws============================'''
+    ============================computing Ws============================
     diff_list = get_diff_list(model)
     diff_diff_list = get_diff_diff_list(model)
     # IPython.embed()
@@ -1642,7 +1603,7 @@ def main():
     print('time W, WdB, WdBdB = ', time.time()-start)
     diff_W = np.array(diff_W)
 
-    '''===========================test fgbuster==========================='''
+    ===========================test fgbuster===========================
     noise_diag = []
     for i in range(6):
         noise_diag.append(model.inv_noise[i*2, i*2])
@@ -1662,40 +1623,40 @@ def main():
     W_dB_maxL = fgcos.W_dB(model.A_, A_dB_maxL, model.A.comp_of_dB, invN=inv_noise6)
     W_dBdB_maxL = fgcos.W_dBdB(model.A_, A_dB_maxL, A_dBdB_maxL,
                                model.A.comp_of_dB, invN=inv_noise6)
-    '''
-    if not model.fix_temp:
-        delta_W_Q = ((W[::2, ::2] - W_maxL)/W_maxL)[0]
-        delta_W_U = ((W[1::2, 1::2] - W_maxL)/W_maxL)[0]
 
-        delta_diff_W_Q = ((diff_W[-2:, ::2, ::2] - W_dB_maxL[::2])/W_dB_maxL[::2])[0]
-        delta_diff_W_U = ((diff_W[-2:, 1::2, 1::2] - W_dB_maxL[::2])/W_dB_maxL[::2])[0]
+    # if not model.fix_temp:
+    #     delta_W_Q = ((W[::2, ::2] - W_maxL)/W_maxL)[0]
+    #     delta_W_U = ((W[1::2, 1::2] - W_maxL)/W_maxL)[0]
+    #
+    #     delta_diff_W_Q = ((diff_W[-2:, ::2, ::2] - W_dB_maxL[::2])/W_dB_maxL[::2])[0]
+    #     delta_diff_W_U = ((diff_W[-2:, 1::2, 1::2] - W_dB_maxL[::2])/W_dB_maxL[::2])[0]
+    #
+    #     delta_diffdiff_W_Q = ((diff_diff_W[-2:, -2:, ::2, ::2] -
+    #                            W_dBdB_maxL[::2, ::2])/W_dBdB_maxL[::2, ::2])[0]
+    #     delta_diffdiff_W_U = ((diff_diff_W[-2:, -2:, 1::2, 1::2] -
+    #                            W_dBdB_maxL[::2, ::2])/W_dBdB_maxL[::2, ::2])[0]
+    # else:
+    #     delta_W_Q = (W[0, ::2] - W_maxL[0])/W_maxL[0]
+    #     delta_W_U = (W[1, 1::2] - W_maxL[0])/W_maxL[0]
+    #
+    #     delta_diff_W_Q = (diff_W[-2:, 0, ::2] - W_dB_maxL[:, 0])/W_dB_maxL[:, 0]
+    #     delta_diff_W_U = (diff_W[-2:, 1, 1::2] - W_dB_maxL[:, 0])/W_dB_maxL[:, 0]
+    #
+    #     delta_diffdiff_W_Q = (diff_diff_W[-2:, -2:, 0, ::2] -
+    #                           W_dBdB_maxL[:, :, 0])/W_dBdB_maxL[:, :, 0]
+    #     delta_diffdiff_W_U = (diff_diff_W[-2:, -2:, 1, 1::2] -
+    #                           W_dBdB_maxL[:, :, 0])/W_dBdB_maxL[:, :, 0]
+    #
+    # print('biggest diff in W_cmb Q w/ fgbuster = ', np.max(np.abs(delta_W_Q)))
+    # print('biggest diff in W_cmb U w/ fgbuster = ', np.max(np.abs(delta_W_U)))
+    # print('biggest diff in dB_W_cmb Q w/ fgbuster = ', np.max(np.abs(delta_diff_W_Q)))
+    # print('biggest diff in dB_W_cmb U w/ fgbuster = ', np.max(np.abs(delta_diff_W_U)))
+    # print('biggest diff in dBdB_W_cmb Q w/ fgbuster = ',
+    #       np.max(np.abs(delta_diffdiff_W_Q)))
+    # print('biggest diff in dBdB_W_cmb U w/ fgbuster = ',
+    #       np.max(np.abs(delta_diffdiff_W_U)))
 
-        delta_diffdiff_W_Q = ((diff_diff_W[-2:, -2:, ::2, ::2] -
-                               W_dBdB_maxL[::2, ::2])/W_dBdB_maxL[::2, ::2])[0]
-        delta_diffdiff_W_U = ((diff_diff_W[-2:, -2:, 1::2, 1::2] -
-                               W_dBdB_maxL[::2, ::2])/W_dBdB_maxL[::2, ::2])[0]
-    else:
-        delta_W_Q = (W[0, ::2] - W_maxL[0])/W_maxL[0]
-        delta_W_U = (W[1, 1::2] - W_maxL[0])/W_maxL[0]
-
-        delta_diff_W_Q = (diff_W[-2:, 0, ::2] - W_dB_maxL[:, 0])/W_dB_maxL[:, 0]
-        delta_diff_W_U = (diff_W[-2:, 1, 1::2] - W_dB_maxL[:, 0])/W_dB_maxL[:, 0]
-
-        delta_diffdiff_W_Q = (diff_diff_W[-2:, -2:, 0, ::2] -
-                              W_dBdB_maxL[:, :, 0])/W_dBdB_maxL[:, :, 0]
-        delta_diffdiff_W_U = (diff_diff_W[-2:, -2:, 1, 1::2] -
-                              W_dBdB_maxL[:, :, 0])/W_dBdB_maxL[:, :, 0]
-
-    print('biggest diff in W_cmb Q w/ fgbuster = ', np.max(np.abs(delta_W_Q)))
-    print('biggest diff in W_cmb U w/ fgbuster = ', np.max(np.abs(delta_W_U)))
-    print('biggest diff in dB_W_cmb Q w/ fgbuster = ', np.max(np.abs(delta_diff_W_Q)))
-    print('biggest diff in dB_W_cmb U w/ fgbuster = ', np.max(np.abs(delta_diff_W_U)))
-    print('biggest diff in dBdB_W_cmb Q w/ fgbuster = ',
-          np.max(np.abs(delta_diffdiff_W_Q)))
-    print('biggest diff in dBdB_W_cmb U w/ fgbuster = ',
-          np.max(np.abs(delta_diffdiff_W_U)))
-    '''
-    '''===========================foregrounds Cls==========================='''
+    ===========================foregrounds Cls===========================
     # fg_freq_maps = data.miscal_matrix.dot(data.mixing_matrix)[:, 2:].dot(data.signal[2:])
     # fg_freq_maps = data.mixing_matrix[:, 2:].dot(data.signal[2:])
 
@@ -1729,7 +1690,7 @@ def main():
     # print('WARNING FSKY !!! Cl_fgs')
     print('time fg spectra = ', time.time()-start)
 
-    '''=============================xForecast============================='''
+    =============================xForecast=============================
     components = [CMB(), Dust(model.dust_freq, temp=20),
                   Synchrotron(model.synchrotron_freq)]
     # instrument_xforecast = {'frequency': model.frequencies, 'Sens_P': V3.so_V3_SA_noise(
@@ -1769,7 +1730,7 @@ def main():
     #     fisher_prior[i, i] += 1/prior_precision**2
     # sigma = np.linalg.inv(fisher_prior)
 
-    '''=============V computation and comparaison with fgbuster============='''
+    =============V computation and comparaison with fgbuster=============
     # V_Q = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 0])
     # V_U = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 1])
 
@@ -1790,7 +1751,7 @@ def main():
     # print('biggest diff in V Q w/ fgbuster = ', np.max(np.abs(delta_V_Q)))
     # print('biggest diff in V U w/ fgbuster = ', np.max(np.abs(delta_V_U)))
 
-    '''===========================Computing ys==========================='''
+    ===========================Computing ys===========================
     print('WARNING FSKY !!!!')
 
     y_Q1 = W[0].dot(fg_freq_maps)
@@ -1800,12 +1761,12 @@ def main():
     # z_Q1 = V_Q.dot(fg_freq_maps)
     # z_U1 = V_U.dot(fg_freq_maps)
 
-    '''===========================computing alms==========================='''
+    ===========================computing alms===========================
 
     y_alms1 = get_ys_alms(y_Q=y_Q1, y_U=y_U1, lmax=lmax)
     # Y_alms1 = get_ys_alms(y_Q=Y_Q1, y_U=Y_U1, lmax=lmax)
     # z_alms1 = get_ys_alms(y_Q=z_Q1, y_U=z_U1, lmax=lmax)
-    '''===========================computing Cls==========================='''
+    ===========================computing Cls===========================
 
     yy1 = get_ys_Cls(y_alms1, y_alms1, lmax, fsky)
     # YY1 = get_ys_Cls(Y_alms1, Y_alms1, lmax)
@@ -1814,16 +1775,16 @@ def main():
     #
     # Yy1 = get_ys_Cls(Y_alms1, y_alms1, lmax)
     # Yz1 = get_ys_Cls(Y_alms1, z_alms1, lmax)
-    '''========================computing residuals========================'''
+    ========================computing residuals========================
     #
     # stat1 = np.einsum('ij, ij... -> ...', sigma, YY1)
     # bias1 = yy1 + yz1 + zy1
     # var1 = stat1**2 + 2 * np.einsum('i..., ij, j... -> ...', Yy1, sigma, Yy1)
     # Clres1 = bias1 + stat1
 
-    '''=====================computing residuals fg comp====================='''
+    =====================computing residuals fg comp=====================
 
-    '''line'''
+
     # yy1_fgcomp1 = get_ys_Cls(y_alms1[::2], y_alms1[::2], lmax)
 
     Y_alms_fgcomp1 = get_ys_alms(y_Q=Y_Q1[-2:], y_U=Y_U1[-2:], lmax=lmax)
@@ -1846,7 +1807,7 @@ def main():
                                                   Yy_gfcomp1, sigmaX, Yy_gfcomp1)
     Clres_fgcomp1 = bias_fgcomp1 + stat_fgcomp1
 
-    '''====================computing fgbuster residuals===================='''
+    ====================computing fgbuster residuals====================
     V_maxL = np.einsum('ij,ij...->...', sigma[-2:, -2:], W_dBdB_maxL[::2, ::2, 0])
     Cl_xF = {}
     Cl_xF['yy'] = fgcos._utmv(W_maxL[0], Cl_fgs.T, W_maxL[0])  # (ell,)
@@ -1862,7 +1823,7 @@ def main():
     stat_fgbuster = np.einsum('ij, lij -> l', sigma[-2:, -2:], Cl_xF['YY'])
     Clres_fgbuster = bias_fgbuster + stat_fgbuster
 
-    '''====================computing fgbuster residuals===================='''
+    ====================computing fgbuster residuals====================
     # V_maxL_all = np.einsum('ij,ij...->...', res_xForecast.Sigma, W_dBdB_maxL[:, :, 0])
     # Cl_xF_all = {}
     # Cl_xF_all['yy'] = fgcos._utmv(W_maxL[0], Cl_fgs.T, W_maxL[0])  # (ell,)
@@ -1877,36 +1838,36 @@ def main():
     # bias_fgbuster_all = Cl_xF_all['yy'] + Cl_xF_all['yz'] + Cl_xF_all['zy']
     # stat_fgbuster_all = np.einsum('ij, lij -> l', res_xForecast.Sigma, Cl_xF_all['YY'])
     # Clres_fgbuster_all = bias_fgbuster_all + stat_fgbuster_all
-    '''
-    plt.plot(Clres_fgbuster, label='fgbuster')
-    # plt.plot(Clres_fgcomp[1], label='comp')
-    plt.plot(Clres_fgcomp1[1], label='comp1')
+    #
+    # plt.plot(Clres_fgbuster, label='fgbuster')
+    # # plt.plot(Clres_fgcomp[1], label='comp')
+    # plt.plot(Clres_fgcomp1[1], label='comp1')
+    #
+    # plt.xscale('log')
+    # plt.yscale('symlog')
+    # plt.legend()
+    # plt.show()
+    #
+    # plt.plot(bias_fgbuster, label='bias fgbuster')
+    # # plt.plot(bias_fgcomp[1], label='bias comp')
+    # plt.plot(bias_fgcomp1[1], label='bias comp1')
+    #
+    # plt.xscale('log')
+    # plt.yscale('symlog')
+    # plt.legend()
+    # plt.show()
+    #
+    # plt.plot(stat_fgbuster, label='stat fgbuster')
+    # # plt.plot(stat_fgcomp[1], label='stat comp')
+    # plt.plot(stat_fgcomp1[1], label='stat comp1')
+    #
+    # plt.xscale('log')
+    # plt.yscale('symlog')
+    # plt.legend()
+    # plt.show()
+    #
 
-    plt.xscale('log')
-    plt.yscale('symlog')
-    plt.legend()
-    plt.show()
-
-    plt.plot(bias_fgbuster, label='bias fgbuster')
-    # plt.plot(bias_fgcomp[1], label='bias comp')
-    plt.plot(bias_fgcomp1[1], label='bias comp1')
-
-    plt.xscale('log')
-    plt.yscale('symlog')
-    plt.legend()
-    plt.show()
-
-    plt.plot(stat_fgbuster, label='stat fgbuster')
-    # plt.plot(stat_fgcomp[1], label='stat comp')
-    plt.plot(stat_fgcomp1[1], label='stat comp1')
-
-    plt.xscale('log')
-    plt.yscale('symlog')
-    plt.legend()
-    plt.show()
-    '''
-
-    '''=========================computing CMB Cls========================='''
+    =========================computing CMB Cls=========================
     cmb_maps = np.zeros(
         (3, data.signal.shape[-1]), dtype=data.signal.dtype)
     cmb_maps[1:] = data.signal[:2]
@@ -1914,7 +1875,7 @@ def main():
     cmb_tot_cls = hp.anafast(cmb_maps, lmax=lmax, iter=10)
     Clcmb = [cmb_tot_cls[1], cmb_tot_cls[2], cmb_tot_cls[4]]
 
-    '''=================computing fgbuster comp xForecast================='''
+    =================computing fgbuster comp xForecast=================
     # sigmaX = res_xForecast.Sigma  # [::2, ::2]
     Cl_xFX = {}
 
@@ -1944,29 +1905,29 @@ def main():
     var_fgbusterX = stat_fgbusterX**2 + 2 * np.einsum('li, ij, lj -> l',  # S16, Eq. 28
                                                       Cl_xFX['Yy'], sigmaX, Cl_xFX['Yy'])
 
-    '''
-    plt.plot(res_xForecast.stat, label='stat xForecast')
-    plt.plot(stat_fgbuster, label='stat fgbuster')
-    plt.plot(stat_fgbusterX, label='stat fgbusterX')
-    # plt.plot(stat_fgcomp[1], label='stat comp')
-    plt.plot(stat_fgcomp1[1], label='stat comp1')
-
-    plt.xscale('log')
-    plt.yscale('symlog')
-    plt.legend()
-    plt.show()
-
-    plt.plot(res_xForecast.bias, label='bias xForecast')
-    plt.plot(bias_fgbuster, label='bias fgbuster')
-    plt.plot(bias_fgbusterX, label='bias fgbusterX')
-    # plt.plot(bias_fgcomp[1], label='bias comp')
-    plt.plot(bias_fgcomp1[1], label='bias comp1')
-
-    plt.xscale('log')
-    plt.yscale('symlog')
-    plt.legend()
-    plt.show()
-    '''
+    #
+    # plt.plot(res_xForecast.stat, label='stat xForecast')
+    # plt.plot(stat_fgbuster, label='stat fgbuster')
+    # plt.plot(stat_fgbusterX, label='stat fgbusterX')
+    # # plt.plot(stat_fgcomp[1], label='stat comp')
+    # plt.plot(stat_fgcomp1[1], label='stat comp1')
+    #
+    # plt.xscale('log')
+    # plt.yscale('symlog')
+    # plt.legend()
+    # plt.show()
+    #
+    # plt.plot(res_xForecast.bias, label='bias xForecast')
+    # plt.plot(bias_fgbuster, label='bias fgbuster')
+    # plt.plot(bias_fgbusterX, label='bias fgbusterX')
+    # # plt.plot(bias_fgcomp[1], label='bias comp')
+    # plt.plot(bias_fgcomp1[1], label='bias comp1')
+    #
+    # plt.xscale('log')
+    # plt.yscale('symlog')
+    # plt.legend()
+    # plt.show()
+    #
     lmin_plot = 2
     lmax_plot = 2*nside
     ell = np.arange(lmin_plot, lmax_plot)
@@ -2176,9 +2137,9 @@ def main():
     # carefull not to use model used for data, here a bias can arise if there is a difference between miscal angles fitted and true ones
 
     cmb_spectra = ps_planck
-    WA_cmb = W[:2].dot(model1.mix_effectiv[:, :2]) - np.identity(2)
-    W_dB_cmb = diff_W[:, 2, :].dot(model1.mix_effectiv[:, :2])
-    W_dBdB_cmb = diff_diff_W[:, :, 2, :].dot(model1.mix_effectiv[:, :2])
+    WA_cmb = W[:2].dot(model_data.mix_effectiv[:, :2]) - np.identity(2)
+    W_dB_cmb = diff_W[:, 2, :].dot(model_data.mix_effectiv[:, :2])
+    W_dBdB_cmb = diff_diff_W[:, :, 2, :].dot(model_data.mix_effectiv[:, :2])
 
     IPython.embed()
     start = time.time()
@@ -2201,16 +2162,8 @@ def main():
     ddt_fg = np.einsum('ik...,...kj->ijk', fg_freq_maps_full, fg_freq_maps_full.T)
     ddt_fg *= mask
     F = np.sum(ddt_fg, axis=-1)
+    '''
 
-    exit()
-
-
-######################################################
-# MAIN CALL
-if __name__ == "__main__":
-    main()
-
-'''================================Purgatory================================'''
 
 # delta_diff_W_Q = []
 # delta_diff_W_U = []
