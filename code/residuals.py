@@ -646,8 +646,8 @@ def sigma2_int(like_mesh, like_r, like_beta, param_grid, r_index, beta_index):
 
 
 def main():
-    nside = 128
-    lmax = 128*2
+    nside = 512
+    lmax = 300
     lmin = 30
     fsky = 0.1
     sky_model = 'c1s0d0'
@@ -665,7 +665,8 @@ def main():
 
     r_true = 0.01
     r_str = '_r0p01'
-    beta_true = 0.01 * u.rad
+    # beta_true = 0.01 * u.rad
+    beta_true = (0.35*u.deg).to(u.rad)
 
     true_miscal_angles = np.array([0]*6)*u.rad
     # true_miscal_angles = np.arange(0.1, 0.5, 0.4/6)*u.rad
@@ -673,7 +674,7 @@ def main():
     prior = True
     prior_indices = []
     if prior:
-        prior_indices = [2, 4]
+        prior_indices = [2, 3]
     prior_precision = (0.1 * u.deg).to(u.rad).value
     prior_str = '{:1.1e}rad'.format(prior_precision)
 
@@ -773,11 +774,11 @@ def main():
                                              diff_list_res, diff_diff_list_res, params)
     fisher_matrix_prior_spectral = fisher_matrix_spectral + prior_matrix
     sigma_spectral = np.linalg.inv(fisher_matrix_prior_spectral)
-
+    start_residuals = time.time()
     stat, bias, var, Cl, Cl_cmb, Cl_residuals_matrix, ell, WA_cmb = get_residuals(
         model_results, fg_freq_maps, sigma_spectral, lmin, lmax, fsky, params,
         cmb_spectra=spectra_true, true_A_cmb=model_data.mix_effectiv[:, :2])
-
+    print('residuals estimation time = ', time.time() - start_residuals)
     np.save(save_path+'sigma_miscal_eval_pior2to4_'+prior_str+r_str, sigma_spectral)
     np.save(save_path+'stat_residuals_eval_pior2to4_'+prior_str+r_str, stat)
     np.save(save_path+'bias_residuals_eval_pior2to4_'+prior_str+r_str, bias)
