@@ -397,17 +397,17 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
     if cmb_spectra is not None:
         # IPython.embed()
 
-        stat = np.einsum('ij, ij... -> ...', sigma, Cl_out['YY'])
+        stat = np.einsum('ij,ij... -> ...', sigma, Cl_out['YY'])
         bias = Cl_out['yy'] + Cl_out['yz'] + Cl_out['zy']
-        var = stat**2 + 2 * np.einsum('i..., ij, j... -> ...',
+        var = stat**2 + 2 * np.einsum('i...,ij,j...->...',
                                       Cl_out['Yy'], sigma, Cl_out['Yy'])
 
         return stat, bias, var, Cl, Cl_cmb, Cl_out_matrix, ell, WA_cmb
 
     else:
-        stat = np.einsum('ij, ij... -> ...', sigma, Cl['YY'])
+        stat = np.einsum('ij,ij...->...', sigma, Cl['YY'])
         bias = Cl['yy'] + Cl['yz'] + Cl['zy']
-        var = stat**2 + 2 * np.einsum('i..., ij, j... -> ...', Cl['Yy'], sigma, Cl['Yy'])
+        var = stat**2 + 2 * np.einsum('i...,ij,j...->...', Cl['Yy'], sigma, Cl['Yy'])
         return stat, bias, var, Cl
 
 
