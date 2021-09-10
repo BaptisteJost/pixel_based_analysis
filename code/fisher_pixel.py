@@ -447,6 +447,44 @@ def fisher_new(ddt, model, diff_list, diff_diff_list, params, Ninvfactor=1):
     return fisher_matrix
 
 
+def spectral_first_deriv(angle_array, ddt, model, prior=False,
+                         fixed_miscal_angles=[], miscal_priors=[],
+                         birefringence=False, spectral_index=False, Ninvfactor=1,
+                         minimize=False, params=None):
+    from residuals import get_diff_list
+    # IPython.embed()
+    model.evaluate_mixing_matrix([angle_array[-2], 20, angle_array[-1]])
+    model.miscal_angles = angle_array[:6]
+    model.bir_angle = 0
+
+    model.get_miscalibration_angle_matrix()
+    model.get_bir_matrix()
+
+    model.get_projection_op()
+    diff_list = get_diff_list(model, params)
+
+    AtNm1A = model.mix_effectiv.T.dot(model.inv_noise).dot(model.mix_effectiv)
+    invAtNm1A = np.linalg.inv(AtNm1A)
+    Nm1A_invAtNm1A = model.inv_noise.dot(model.mix_effectiv).dot(invAtNm1A)
+    param_num = len(diff_list)
+    deriv_vector = np.empty(param_num)
+    for i in range(param_num):
+        A_i = effectiv_diff_mixing_matrix_new(i, diff_list, model, params)
+        AitP = A_i.T.dot(model.projection)
+        term = Nm1A_invAtNm1A.dot(AitP)
+        deriv = np.sum(np.trace(term.dot(ddt)))
+
+        gaussian_prior_deriv = 0
+        if np.any(miscal_priors[:, 2] == i):
+            gaussian_prior_deriv += (angle_array[int(miscal_priors[i, 2])] -
+                                     miscal_priors[i, 0]) / (miscal_priors[i, 1]**2)
+        deriv_vector[i] = deriv - gaussian_prior_deriv
+    if minimize:
+        return -deriv_vector
+    else:
+        return deriv_vector
+
+
 def term_fisher_debug(term, ddt):
     dot = term.dot(ddt)
     sum_trace = np.sum(np.trace(dot))

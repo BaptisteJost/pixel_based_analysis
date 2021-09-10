@@ -467,22 +467,22 @@ def cosmo_likelihood(Cl_model, Cl_data, Cl_residuals, sigma_res, ell, fsky):
 
 
 def cosmo_likelihood_nodeprojection(Cl_model_total, Cl_data, ell, fsky):
-
+    # IPython.embed()
     inv_model = np.linalg.inv(Cl_model_total.T).T
     dof = (2 * ell + 1) * fsky
     dof_over_Cl = dof * inv_model
 
-    logm_list = []
     first_term_ell = np.einsum('ijl,jkl->ikl', dof_over_Cl, Cl_data)
 
-    for l in range(dof_over_Cl.shape[-1]):
-        logm_list.append(logm(Cl_model_total[:, :, l]))
-
-    logm_list = np.array(logm_list)
+    # logm_list = []
+    # for l in range(dof_over_Cl.shape[-1]):
+    #     logm_list.append(logm(Cl_model_total[:, :, l]))
+    # logm_list = np.array(logm_list)
+    # logdetC = np.sum(dof*np.trace(logm_list.T))
 
     first_term = np.sum(np.trace(first_term_ell))
 
-    logdetC = np.sum(dof*np.trace(logm_list.T))
+    logdetC = np.sum(dof*np.log(np.abs(np.linalg.det(Cl_model_total.T))))
 
     return first_term + logdetC
 
@@ -505,11 +505,68 @@ def likelihood_exploration(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_Si
     Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
 
     Cl_model_total = Cl_cmb_rot_matrix + Cl_noise_matrix + tr_SigmaYY
+    # IPython.embed()
 
     likelihood = cosmo_likelihood_nodeprojection(
         Cl_model_total, Cl_data, ell, fsky)
-
+    print('-2logL = ', likelihood)
     return likelihood
+
+
+def jac_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky):
+    r = cosmo_params[0]
+    # IPython.embed()
+    beta = cosmo_params[1]*u.rad
+
+    Cl_cmb_model = np.zeros([4, Cl_fid['EE'].shape[0]])
+    Cl_cmb_model[1] = copy.deepcopy(Cl_fid['EE'])
+    Cl_cmb_model[2] = copy.deepcopy(Cl_fid['BlBl'])*1 + copy.deepcopy(Cl_fid['BuBu']) * r
+    Cl_cmb_dr = np.zeros([4, Cl_fid['EE'].shape[0]])
+    Cl_cmb_dr[2] = copy.deepcopy(Cl_fid['BuBu'])
+
+    Cl_cmb_rot = lib.cl_rotation(Cl_cmb_model.T, beta).T
+    Cl_cmb_dr_rot = lib.cl_rotation(Cl_cmb_dr.T, beta).T
+    Cl_cmb_derivrot = lib.cl_rotation_derivative(Cl_cmb_model.T, beta).T
+
+    Cl_cmb_rot_matrix = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
+    Cl_cmb_rot_matrix[0, 0] = copy.deepcopy(Cl_cmb_rot[1])
+    Cl_cmb_rot_matrix[1, 1] = copy.deepcopy(Cl_cmb_rot[2])
+    Cl_cmb_rot_matrix[1, 0] = copy.deepcopy(Cl_cmb_rot[4])
+    Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
+
+    Cl_model_total = Cl_cmb_rot_matrix + Cl_noise_matrix  # + tr_SigmaYY
+
+    inv_model = np.linalg.inv(Cl_model_total.T).T
+    dof = (2 * ell + 1) * fsky
+    dof_over_Cl = dof * inv_model
+
+    dCldr = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
+    dCldr[0, 0] = copy.deepcopy(Cl_cmb_dr_rot[1])
+    dCldr[1, 1] = copy.deepcopy(Cl_cmb_dr_rot[2])
+    dCldr[1, 0] = copy.deepcopy(Cl_cmb_dr_rot[4])
+    dCldr[0, 1] = copy.deepcopy(Cl_cmb_dr_rot[4])
+
+    dCldbeta = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
+    dCldbeta[0, 0] = copy.deepcopy(Cl_cmb_derivrot[1])
+    dCldbeta[1, 1] = copy.deepcopy(Cl_cmb_derivrot[2])
+    dCldbeta[1, 0] = copy.deepcopy(Cl_cmb_derivrot[4])
+    dCldbeta[0, 1] = copy.deepcopy(Cl_cmb_derivrot[4])
+    deriv_list = [dCldr, dCldbeta]
+
+    d_Cl = []
+    for i in range(2):
+        first_term_1 = np.einsum('ijl,jkl->ikl', dof_over_Cl, deriv_list[i])
+        first_term_2 = np.einsum('ijl,jkl->ikl', first_term_1, inv_model)
+        first_term_3 = np.einsum('ijl,jkl->ikl', first_term_2, Cl_data)
+        first_term = np.sum(np.trace(first_term_3))
+
+        second_term = np.sum(np.trace(copy.deepcopy(first_term_1)))
+
+        d_Cl.append(-first_term + second_term)
+    d_Cl = np.array(d_Cl)
+    # d_Cl[0] *= -1
+    print(d_Cl)
+    return d_Cl
 
 
 def get_Cl_cmbBB(Alens=1., r=0.001, path_BB='.'):
@@ -575,18 +632,29 @@ def get_ranges(r_bounds, beta_bounds, r_true, beta_true, results_mini, nsteps_r,
 def get_chi2_grid(r_range, beta_range, Cl_fid, Cl_data,
                   Cl_noise_matrix, tr_SigmaYY, ell, fsky):
     likelihood_grid = []
+    jac_grid_r = []
+    jac_grid_beta = []
     for r in r_range:
         for beta in beta_range:
             likelihood_grid.append(likelihood_exploration([r, beta], Cl_fid, Cl_data,
                                                           Cl_noise_matrix, tr_SigmaYY, ell, fsky))
+            jac = jac_cosmo([r, beta], Cl_fid, Cl_data,
+                            Cl_noise_matrix, tr_SigmaYY, ell, fsky)
+            jac_grid_r.append(jac[0])
+            jac_grid_beta.append(jac[1])
     likelihood_grid = np.array(likelihood_grid)
+    jac_grid_r = np.array(jac_grid_r)
+    jac_grid_beta = np.array(jac_grid_beta)
+
     chi2_mesh = np.reshape(likelihood_grid, (-1, len(beta_range)))
+    jac_mesh_r = np.reshape(jac_grid_r, (-1, len(beta_range)))
+    jac_mesh_beta = np.reshape(jac_grid_beta, (-1, len(beta_range)))
 
     betaxx, ryy = np.meshgrid(beta_range, r_range)
     pos = np.empty(betaxx.shape + (2,))
     pos[:, :, 0] = betaxx
     pos[:, :, 1] = ryy
-    return chi2_mesh, betaxx, ryy, pos
+    return chi2_mesh, jac_mesh_r, jac_mesh_beta, betaxx, ryy, pos
 
 
 def chi2_2_likenorm(chi2_mesh, pos, r_index, beta_index):
@@ -646,13 +714,13 @@ def sigma2_int(like_mesh, like_r, like_beta, param_grid, r_index, beta_index):
 
 
 def main():
-    nside = 512
+    nside = 128
     lmax = 300
     lmin = 30
     fsky = 0.1
     sky_model = 'c1s0d0'
-    sensitiviy_mode = 0
-    one_over_f_mode = 0
+    sensitiviy_mode = 2
+    one_over_f_mode = 2
     A_lens_true = 1
     # sensitivity_mode
     #     0: threshold,
@@ -665,20 +733,22 @@ def main():
 
     r_true = 0.01
     r_str = '_r0p01'
-    # beta_true = 0.01 * u.rad
-    beta_true = (0.35*u.deg).to(u.rad)
+    beta_true = 0.01 * u.rad
+    # beta_true = (0.0*u.deg).to(u.rad)
 
     true_miscal_angles = np.array([0]*6)*u.rad
     # true_miscal_angles = np.arange(0.1, 0.5, 0.4/6)*u.rad
+    # true_miscal_angles = np.array([0]*6)*u.rad
+    # true_miscal_angles[0] = 0.4333*u.rad
 
     prior = True
     prior_indices = []
     if prior:
-        prior_indices = [2, 3]
-    prior_precision = (0.1 * u.deg).to(u.rad).value
+        prior_indices = [0, 6]
+    prior_precision = (7 * u.deg).to(u.rad).value
     prior_str = '{:1.1e}rad'.format(prior_precision)
 
-    save_path = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/SOf2f/'
+    save_path = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/test/'
 
     path_BB_local = '/home/baptiste/BBPipe'
     path_BB_NERSC = '/global/homes/j/jost/BBPipe'
@@ -725,9 +795,11 @@ def main():
     n_obspix = np.sum(mask == 1)
     del mask
     F = np.sum(ddt_fg, axis=-1)/n_obspix
-    data_model = n_obspix*(F + ASAt + model.noise_covariance)
+    data_model = n_obspix*(F + ASAt + model_data.noise_covariance)
 
     angle_array_start = np.array([0., 0., 0., 0., 0., 0., 2, -2.5])
+    # angle_array_start = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 2, -2.5])
+    # angle_array_start = np.array([0., 0., 0., 0., 0., 0., 1.59, -3])
 
     angle_prior = []
     if prior:
@@ -736,9 +808,47 @@ def main():
             # angle_prior.append([(1*u.deg).to(u.rad).value, prior_precision, int(d)])
         angle_prior = np.array(angle_prior[prior_indices[0]: prior_indices[-1]])
 
+    alpha_grid = np.linspace(-2*prior_precision/30, 2*prior_precision/30, 1000)
+    chi2_grid = []
+    angle_array_grid = true_miscal_angles.value.tolist()
+    angle_array_grid.append(1.59)
+    angle_array_grid.append(-3)
+    model.n_obspix = n_obspix
+    for i in alpha_grid:
+        angle_array_grid[2] = i
+        chi2_grid.append(get_chi_squared_local(angle_array_grid, data_model,
+                                               model, prior, [], angle_prior, False, True, 1, False))
+    # np.save('grid_prior0p01deg_b0_r0_n128_max', chi2_grid)
+    # results_min = minimize(get_chi_squared_local, angle_array_start, args=(
+    #                        data_model, model, prior, [], angle_prior, False, True, 1, True),
+    #                        bounds=((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (0.5, 2.5), (-5, -1)), tol=1e-18)
+    params = ['miscal']*6
+    params.append('spectral')
+    params.append('spectral')
+
+    # results_min = minimize(get_chi_squared_local, angle_array_start, args=(
+    #                        data_model, model, prior, [], angle_prior, False, True, 1, True),
+    #                        tol=1e-18, method='L-BFGS-B', options={'maxiter': 1000},
+    #                        bounds=((-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (0.5, 2.5), (-5, -1)))
     results_min = minimize(get_chi_squared_local, angle_array_start, args=(
-                           data_model, model, prior, [], angle_prior, False, True, 1, True),
-                           bounds=((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (0.5, 2.5), (-5, -1)), tol=1e-18)
+        data_model, model, prior, [], angle_prior, False, True, 1, True, params),
+        tol=1e-18, options={'maxiter': 1000}, jac=fshp.spectral_first_deriv, method='SLSQP',
+        bounds=((-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (0.5, 2.5), (-5, -1)))
+
+    chi2_min = get_chi_squared_local(results_min.x, data_model, model,
+                                     prior, [], angle_prior, False, True, 1, True)
+    # chi2_minjac = get_chi_squared_local(results_minjac.x, data_model, model,
+    #                                     prior, [], angle_prior, False, True, 1, True)
+
+    chi2_true = get_chi_squared_local([0, 0, 0, 0, 0, 0, 1.59, -3], data_model, model,
+                                      prior, [], angle_prior, False, True, 1, True)
+    print('delta chi2 = ', chi2_min - chi2_true)
+    print('delta alpha = ', true_miscal_angles.value[2] - results_min.x[2])
+    # IPython.embed()
+    # results_min = minimize(get_chi_squared_local, angle_array_start[1:], args=(
+    #                        data_model, model, prior, [], angle_prior, False, True, 1, True),
+    #                        bounds=((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (0.5, 2.5), (-5, -1)), tol=1e-18)
+    # results_min.x = np.append(0, results_min.x)
     # print('')
     # print(results_min.x)
     # for i in range(6):
@@ -753,17 +863,12 @@ def main():
     print('results - spectral_true = ', results_min.x[:6] - true_miscal_angles.value)
     print('results - spectral_true = ', results_min.x[-2] - 1.59)
     print('results - spectral_true = ', results_min.x[-1] + 3)
-    np.save(save_path+'miscal_mini_pior2to4_'+prior_str+r_str, results_min.x)
-
-    params = ['miscal']*6
-    # params.append('birefringence')
-    params.append('spectral')
-    params.append('spectral')
+    # np.save(save_path+'miscal_mini_pior2to4_'+prior_str+r_str, results_min.x)
 
     prior_matrix = np.zeros([len(params), len(params)])
     if prior:
         for i in range(prior_indices[0], prior_indices[-1]):
-            prior_matrix[i, i] += 1/prior_precision**2
+            prior_matrix[i, i] += 1/(prior_precision**2)
 
     ps_planck = copy.deepcopy(get_Cl_cmbBB(Alens=A_lens_true, r=r_true, path_BB=path_BB))
     spectra_true = lib.cl_rotation(ps_planck.T, beta_true).T
@@ -774,7 +879,55 @@ def main():
                                              diff_list_res, diff_diff_list_res, params)
     fisher_matrix_prior_spectral = fisher_matrix_spectral + prior_matrix
     sigma_spectral = np.linalg.inv(fisher_matrix_prior_spectral)
+
     start_residuals = time.time()
+    '''
+    sigma_spectral_1D = 1/fisher_matrix_prior_spectral
+    chi2_grid_min = []
+    first_deriv_grid = []
+    angle_array_grid = copy.deepcopy(results_min.x)
+    angle_array_grid_true = copy.deepcopy(true_miscal_angles.value.tolist())
+    angle_array_grid_true.append(1.59)
+    angle_array_grid_true.append(-3)
+    # angle_array_grid_deriv = copy.deepcopy(results_minjac.x)
+    for i in alpha_grid:
+        angle_array_grid[2] = i
+        # angle_array_grid_deriv[5] = i
+        angle_array_grid_true[2] = i
+        chi2_grid_min.append(get_chi_squared_local(angle_array_grid, data_model,
+                                                   model, prior, [], angle_prior, False, True, 1, False))
+        # first_deriv_grid.append(fshp.spectral_first_deriv(
+        #     angle_array_grid, data_model, model, diff_list_res, params, angle_prior))
+        # first_deriv_grid.append(fshp.spectral_first_deriv(
+        #     angle_array_grid_deriv, data_model, model, prior, [], angle_prior, False, True, 1, True, params))
+
+    # np.save('grid_prior0p01deg_b0_r0_n128_minimisation', chi2_grid)
+    import scipy as sc
+    import scipy.stats as st
+    chi2_grid = np.array(chi2_grid)
+    chi2_grid_min = np.array(chi2_grid_min)
+    first_deriv_grid = np.array(first_deriv_grid)
+    # gaussianM = st.norm.pdf(alpha_grid, 0, sc.linalg.sqrtm(sigma_spectral)[2, 2])
+    gaussianM = st.norm.pdf(alpha_grid, 0, np.sqrt(sigma_spectral_1D)[2, 2]*np.sqrt(2))
+    '''
+    '''
+    WARNING : np.sqrt(2) comes from the fact that we compute fisher of -2log(L) and not of log(L)
+    '''
+    '''
+    plt.plot((alpha_grid*u.rad).to(u.deg).value,
+             np.exp((chi2_grid-np.max(chi2_grid))/2), label='grid true values')
+    plt.plot((alpha_grid*u.rad).to(u.deg).value,
+             np.exp((chi2_grid_min-np.max(chi2_grid_min))/2), label='grid minimisation', linestyle='--')
+    # plt.plot((alpha_grid*u.rad).to(u.deg).value,
+    #          first_deriv_grid[:, 2]/np.max(first_deriv_grid[:, 2]))
+    plt.plot((alpha_grid*u.rad).to(u.deg).value, gaussianM /
+             np.max(gaussianM), linestyle=':', label='gaussian fisher')
+    plt.vlines((results_min.x[2]*u.rad).to(u.deg).value, 0, 1, colors='black', linestyles='--')
+    plt.legend()
+    plt.show()
+
+    # IPython.embed()
+    '''
     stat, bias, var, Cl, Cl_cmb, Cl_residuals_matrix, ell, WA_cmb = get_residuals(
         model_results, fg_freq_maps, sigma_spectral, lmin, lmax, fsky, params,
         cmb_spectra=spectra_true, true_A_cmb=model_data.mix_effectiv[:, :2])
@@ -804,10 +957,46 @@ def main():
     Cl_data = Cl_residuals_matrix['yy'] + Cl_residuals_matrix['zy'] + \
         Cl_residuals_matrix['yz'] + tr_SigmaYY + Cl_noise_matrix
 
-    cosmo_params = [0, 0.5]
+    chi2cosmo_true = likelihood_exploration([r_true, beta_true.value], Cl_fid, Cl_data,
+                                            Cl_noise_matrix, tr_SigmaYY, ell, fsky)
+
+    cosmo_params = [0.03, 0.04]
+    # IPython.embed()
     results_cosmp = minimize(likelihood_exploration, cosmo_params, args=(
-        Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky), bounds=((-0.02, 0.1), (-np.pi/4, np.pi/4)), tol=1e-18)
+        Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky),
+        bounds=((-0.01, 0.1), (-np.pi/4, np.pi/4)), tol=1e-18,
+        method='L-BFGS-B')  # , jac=jac_cosmo)
+    print('')
+    print(results_cosmp)
+    print('')
+    print('delta chi2cosmo = ', results_cosmp.fun - chi2cosmo_true)
     print('results - true cosmo = ', results_cosmp.x - np.array([r_true, beta_true.value]))
+    # IPython.embed()
+    grid_r = np.linspace(-0.01, 0.1, 100)
+    grid_beta = np.linspace(-0.78, 0.78, 100)
+    param_grid = [0, 0]
+    chi2r = []
+    chi2_beta = []
+    jac_r = []
+    jac_beta = []
+    for r in grid_r:
+        param_grid[0] = r
+        chi2r.append(likelihood_exploration(param_grid, Cl_fid, Cl_data,
+                                            Cl_noise_matrix, tr_SigmaYY, ell, fsky))
+        jac_r.append(jac_cosmo(param_grid, Cl_fid, Cl_data,
+                               Cl_noise_matrix, tr_SigmaYY, ell, fsky))
+    chi2r = np.array(chi2r)
+    jac_r = np.array(jac_r)
+
+    param_grid = [0, 0]
+    for b in grid_beta:
+        param_grid[1] = b
+        chi2_beta.append(likelihood_exploration(param_grid, Cl_fid, Cl_data,
+                                                Cl_noise_matrix, tr_SigmaYY, ell, fsky))
+        jac_beta.append(jac_cosmo(param_grid, Cl_fid, Cl_data,
+                                  Cl_noise_matrix, tr_SigmaYY, ell, fsky))
+    chi2_beta = np.array(chi2_beta)
+    jac_beta = np.array(jac_beta)
 
     '''==================Fisher cosmo likelihood estimation================='''
 
@@ -994,10 +1183,12 @@ def main():
     r_range = np.arange(-0.01, 0.02, 0.021/100)
 
     r_range2, beta_range2, r_index, beta_index, rmini_index, betamini_index = get_ranges(
-        [-0.01, 0.03], [0.0, 0.02], r_true, beta_true.value, results_cosmp.x, 100, 1)
+        [-0.2, 0.5], [-np.pi/4, np.pi/4], r_true, beta_true.value, results_cosmp.x, 5, 5)
     # beta_index = 0
-    chi2_mesh, betaxx, ryy, pos = get_chi2_grid(r_range2, beta_range2, Cl_fid, Cl_data,
-                                                Cl_noise_matrix, tr_SigmaYY, ell, fsky)
+    start = time.time()
+    chi2_mesh, jac_mesh_r, jac_mesh_beta, betaxx, ryy, pos = get_chi2_grid(r_range2, beta_range2, Cl_fid, Cl_data,
+                                                                           Cl_noise_matrix, tr_SigmaYY, ell, fsky)
+    print(time.time() - start)
     like_mesh, like_r, like_beta = chi2_2_likenorm(chi2_mesh, pos, r_index, beta_index)
     sigma2_r, sigma2_beta, sigma2_beta_r = sigma2_int(
         like_mesh, like_r, like_beta, pos, r_index, beta_index)

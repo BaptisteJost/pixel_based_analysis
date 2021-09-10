@@ -14,13 +14,13 @@ import residuals as res
 
 
 def main():
-    nside = 512
+    nside = 128
     lmax = 300
     lmin = 30
     fsky = 0.1
     sky_model = 'c1s0d0'
-    sensitiviy_mode = 0
-    one_over_f_mode = 0
+    sensitiviy_mode = 2
+    one_over_f_mode = 2
     A_lens_true = 1
     # sensitivity_mode
     #     0: threshold,
@@ -32,17 +32,17 @@ def main():
     #     2: none
 
     r_true = 0.01
-    r_str = '_r0p01'
-    # beta_true = 0.01 * u.rad
-    beta_true = (0.35*u.deg).to(u.rad)
+    r_str = '_r0p0'
+    beta_true = 0.01 * u.rad
+    # beta_true = (0.0*u.deg).to(u.rad)
 
     true_miscal_angles = np.array([0]*6)*u.rad
     # true_miscal_angles = np.arange(0.1, 0.5, 0.4/6)*u.rad
     prior = True
     prior_indices = []
     if prior:
-        prior_indices = [2, 3]
-    prior_str = '{:1.1e}rad'.format(prior_precision)
+        prior_indices = [0, 6]
+    # prior_str = '{:1.1e}rad'.format(prior_precision)
 
     save_path = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/SOf2f/'
 
@@ -94,8 +94,10 @@ def main():
     data_model = n_obspix*(F + ASAt + model.noise_covariance)
 
     angle_array_start = np.array([0., 0., 0., 0., 0., 0., 2, -2.5])
-    prior_precision_grid = np.linspace(0.01, 10, 2)
+    prior_precision_grid = np.linspace(0.001, 10, 10)
     fisher_cosmo_matrix_list = []
+    results_cosmp_list = []
+
     for prior_precision_deg in prior_precision_grid:
         prior_precision = (prior_precision_deg * u.deg).to(u.rad).value
         angle_prior = []
@@ -105,9 +107,19 @@ def main():
                 # angle_prior.append([(1*u.deg).to(u.rad).value, prior_precision, int(d)])
             angle_prior = np.array(angle_prior[prior_indices[0]: prior_indices[-1]])
 
+        # results_min = minimize(get_chi_squared_local, angle_array_start, args=(
+        #                        data_model, model, prior, [], angle_prior, False, True, 1, True),
+        #                        bounds=((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (0.5, 2.5), (-5, -1)), tol=1e-18)
+
+        params = ['miscal']*6
+        params.append('spectral')
+        params.append('spectral')
+
         results_min = minimize(get_chi_squared_local, angle_array_start, args=(
-                               data_model, model, prior, [], angle_prior, False, True, 1, True),
-                               bounds=((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (0.5, 2.5), (-5, -1)), tol=1e-18)
+            data_model, model, prior, [], angle_prior, False, True, 1, True, params),
+            tol=1e-18, options={'maxiter': 1000}, jac=fshp.spectral_first_deriv, method='SLSQP',
+            bounds=((-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (0.5, 2.5), (-5, -1)))
+
         # print('')
         # print(results_min.x)
         # for i in range(6):
@@ -123,11 +135,6 @@ def main():
         print('results - spectral_true = ', results_min.x[-2] - 1.59)
         print('results - spectral_true = ', results_min.x[-1] + 3)
 
-        params = ['miscal']*6
-        # params.append('birefringence')
-        params.append('spectral')
-        params.append('spectral')
-
         prior_matrix = np.zeros([len(params), len(params)])
         if prior:
             for i in range(prior_indices[0], prior_indices[-1]):
@@ -142,6 +149,7 @@ def main():
                                                  diff_list_res, diff_diff_list_res, params)
         fisher_matrix_prior_spectral = fisher_matrix_spectral + prior_matrix
         sigma_spectral = np.linalg.inv(fisher_matrix_prior_spectral)
+
         start_residuals = time.time()
         stat, bias, var, Cl, Cl_cmb, Cl_residuals_matrix, ell, WA_cmb = res.get_residuals(
             model_results, fg_freq_maps, sigma_spectral, lmin, lmax, fsky, params,
@@ -168,9 +176,11 @@ def main():
         Cl_data = Cl_residuals_matrix['yy'] + Cl_residuals_matrix['zy'] + \
             Cl_residuals_matrix['yz'] + tr_SigmaYY + Cl_noise_matrix
 
-        cosmo_params = [0, 0.5]
+        cosmo_params = [0.03, 0.04]
         results_cosmp = minimize(res.likelihood_exploration, cosmo_params, args=(
-            Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky), bounds=((-0.02, 0.1), (-np.pi/4, np.pi/4)), tol=1e-18)
+            Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky),
+            bounds=((-0.01, 0.1), (-np.pi/4, np.pi/4)), tol=1e-18,
+            method='L-BFGS-B')
         print('results - true cosmo = ', results_cosmp.x - np.array([r_true, beta_true.value]))
 
         '''==================Fisher cosmo likelihood estimation================='''
@@ -200,7 +210,10 @@ def main():
         fisher_cosmo_matrix = np.array([[fish_r, fish_beta_r],
                                         [fish_beta_r, fish_beta]])
         fisher_cosmo_matrix_list.append(fisher_cosmo_matrix)
+        results_cosmp_list.append(results_cosmp.x)
     fisher_cosmo_matrix_array = np.array(fisher_cosmo_matrix_list)
+    results_cosmp_list = np.array(results_cosmp_list)
+    IPython.embed()
     np.save('fisher_matrix_grid_prior{}to{}.npy'.format(
         prior_indices[0], prior_indices[-1]), fisher_cosmo_matrix_array)
     np.save('grid_prior_precision.npy', prior_precision_grid)

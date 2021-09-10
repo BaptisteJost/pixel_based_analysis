@@ -20,7 +20,8 @@ from mpi4py import MPI
 def get_chi_squared_local(angle_array, ddtPN, model_skm, prior=False,
                           fixed_miscal_angles=[], miscal_priors=[],
                           birefringence=False, spectral_index=False, Ninvfactor=1,
-                          minimize=False):
+                          minimize=False, params=None):
+    # angle_array = np.append(0, angle_array)
     if spectral_index:
         angle_index = - 2
         angle_index_none = angle_index
@@ -62,8 +63,11 @@ def get_chi_squared_local(angle_array, ddtPN, model_skm, prior=False,
     if prior:
         gaussian_prior = 0
         for l in range(len(miscal_priors)):
-            gaussian_prior += np.sum((1/(2*(miscal_priors[l, 1]**2)))
-                                     * (angle_array[int(miscal_priors[l, 2])] - miscal_priors[l, 0])**2)
+            # gaussian_prior += (1/(2*(miscal_priors[l, 1]**2))
+            #                    * (angle_array[int(miscal_priors[l, 2])] - miscal_priors[l, 0])**2)
+            gaussian_prior += ((angle_array[int(miscal_priors[l, 2])] -
+                                miscal_priors[l, 0])**2) / (2*(miscal_priors[l, 1]**2)) + 2*np.log(2*miscal_priors[l, 1]*np.sqrt(2*np.pi))
+
         if minimize:
             return -chi_squared + gaussian_prior
         else:
