@@ -476,8 +476,9 @@ def spectral_first_deriv(angle_array, ddt, model, prior=False,
 
         gaussian_prior_deriv = 0
         if np.any(miscal_priors[:, 2] == i):
-            gaussian_prior_deriv += (angle_array[int(miscal_priors[i, 2])] -
-                                     miscal_priors[i, 0]) / (miscal_priors[i, 1]**2)
+            j = np.where(miscal_priors[:, 2] == i)[0][0]
+            gaussian_prior_deriv += (angle_array[int(miscal_priors[j, 2])] -
+                                     miscal_priors[j, 0]) / (miscal_priors[j, 1]**2)
         deriv_vector[i] = deriv - gaussian_prior_deriv
     if minimize:
         return -deriv_vector
