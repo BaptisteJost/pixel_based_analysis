@@ -14,12 +14,47 @@ import residuals as res
 from mpi4py import MPI
 from datetime import date
 import os
+import configparser
 
 
 def parameters2file(path, nside, lmax, lmin, fsky, sky_model, sensitiviy_mode,
                     one_over_f_mode, A_lens_true, r_true, beta_true,
                     true_miscal_angles, prior, prior_indices, nsim, prior_start,
                     prior_end, initmodel_miscal, angle_array_start, cosmo_params, path_BB):
+    config = configparser.ConfigParser()
+    config['DEFAULT'] = {}
+    config['DEFAULT']['nside'] = str(nside)
+    config['DEFAULT']['lmax'] = str(lmax)
+    config['DEFAULT']['lmin'] = str(lmin)
+    config['DEFAULT']['fsky'] = str(fsky)
+    config['DEFAULT']['sky_model'] = sky_model
+    config['DEFAULT']['path BB'] = path_BB
+    config['DEFAULT']['mask file'] = path_BB + \
+        '/test_mapbased_param/mask_04000.fits'  # WARNING: hardcoded
+    config['DEFAULT']['sensitiviy_mode'] = str(sensitiviy_mode)
+    config['DEFAULT']['one_over_f_mode'] = str(one_over_f_mode)
+    config['DEFAULT']['A_lens_true'] = str(A_lens_true)
+    config['DEFAULT']['r_true'] = str(r_true)
+    config['DEFAULT']['beta_true'] = str(beta_true.value)
+    config['DEFAULT']['true_miscal_angles'] = str(true_miscal_angles.value)
+
+    config['DEFAULT']['prior'] = str(prior)
+
+    config['DEFAULT']['prior_indices'] = str(prior_indices)
+    config['DEFAULT']['nsim'] = str(nsim)
+    config['DEFAULT']['prior_start'] = str(prior_start)
+    config['DEFAULT']['prior_end'] = str(prior_end)
+
+    # Model initialisaion before minimisation (shouldn't have any impact)
+    config['DEFAULT']['initmodel_miscal'] = str(initmodel_miscal.value)
+
+    # Initial values of parameter vectors before initialisation
+    config['DEFAULT']['angle_array_start'] = str(angle_array_start)
+    config['DEFAULT']['cosmo_params'] = str(cosmo_params)
+
+    with open(path+'example.ini', 'w+') as configfile:
+        config.write(configfile)
+
     file_string = '''
     nside = '''+str(nside)+'''
     lmax = '''+str(lmax)+'''
@@ -118,7 +153,7 @@ def main():
     nsim = 1000
 
     prior_start = 0.01
-    prior_end = 1
+    prior_end = 10
 
     initmodel_miscal = np.array([0]*6)*u.rad
     angle_array_start = np.array([0., 0., 0., 0., 0., 0., 2, -2.5])
