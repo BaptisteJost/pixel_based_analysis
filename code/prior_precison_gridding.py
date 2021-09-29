@@ -99,14 +99,14 @@ def main():
         fsky = 0.1
         lmin = 30
         lmax = 300
+        nside = 512
 
     if INSTRU == 'Planck':
         freq_number = 7
         fsky = 0.6
         lmin = 51
         lmax = 1500
-
-    nside = 512
+        nside = 2048
 
     sky_model = 'c1s0d0'
     sensitiviy_mode = 0
@@ -287,7 +287,7 @@ def main():
         results_cosmp = minimize(res.likelihood_exploration, cosmo_params, args=(
             Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky),
             bounds=((-0.01, 0.1), (-np.pi/4, np.pi/4)), tol=1e-18,
-            method='L-BFGS-B', jac=res.jac_cosmo)
+            method='L-BFGS-B')  # , jac=res.jac_cosmo)
 
         print('')
         print('results - true cosmo = ', results_cosmp.x - np.array([r_true, beta_true.value]))
