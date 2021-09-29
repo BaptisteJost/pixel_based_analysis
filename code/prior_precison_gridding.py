@@ -20,9 +20,10 @@ import configparser
 def parameters2file(path, nside, lmax, lmin, fsky, sky_model, sensitiviy_mode,
                     one_over_f_mode, A_lens_true, r_true, beta_true,
                     true_miscal_angles, prior, prior_indices, nsim, prior_start,
-                    prior_end, initmodel_miscal, angle_array_start, cosmo_params, path_BB):
+                    prior_end, initmodel_miscal, angle_array_start, cosmo_params, path_BB, INSTRU):
     config = configparser.ConfigParser()
     config['DEFAULT'] = {}
+    config['DEFAULT']['INSTRU'] = INSTRU
     config['DEFAULT']['nside'] = str(nside)
     config['DEFAULT']['lmax'] = str(lmax)
     config['DEFAULT']['lmin'] = str(lmin)
@@ -31,8 +32,9 @@ def parameters2file(path, nside, lmax, lmin, fsky, sky_model, sensitiviy_mode,
     config['DEFAULT']['path BB'] = path_BB
     config['DEFAULT']['mask file'] = path_BB + \
         '/test_mapbased_param/mask_04000.fits'  # WARNING: hardcoded
-    config['DEFAULT']['sensitiviy_mode'] = str(sensitiviy_mode)
-    config['DEFAULT']['one_over_f_mode'] = str(one_over_f_mode)
+    if INSTRU == 'SAT':
+        config['DEFAULT']['sensitiviy_mode'] = str(sensitiviy_mode)
+        config['DEFAULT']['one_over_f_mode'] = str(one_over_f_mode)
     config['DEFAULT']['A_lens_true'] = str(A_lens_true)
     config['DEFAULT']['r_true'] = str(r_true)
     config['DEFAULT']['beta_true'] = str(beta_true.value)
@@ -55,38 +57,6 @@ def parameters2file(path, nside, lmax, lmin, fsky, sky_model, sensitiviy_mode,
     with open(path+'example.ini', 'w+') as configfile:
         config.write(configfile)
 
-    file_string = '''
-    nside = '''+str(nside)+'''
-    lmax = '''+str(lmax)+'''
-    lmin = '''+str(lmin)+'''
-    fsky = '''+str(fsky)+'''
-    sky_model = ''' + sky_model + '''
-    path to mask = '''+path_BB+'/test_mapbased_param/mask_04000.fits'+''' WARNING: hardcoded
-    sensitiviy_mode = '''+str(sensitiviy_mode)+'''
-    one_over_f_mode = '''+str(one_over_f_mode)+'''
-    A_lens_true = '''+str(A_lens_true)+'''
-    r_true = '''+str(r_true)+'''
-    beta_true = '''+str(beta_true)+'''
-    true_miscal_angles = '''+str(true_miscal_angles)+'''
-
-    prior = '''+str(prior)+'''
-
-    prior_indices = '''+str(prior_indices)+'''
-    nsim = '''+str(nsim)+'''
-    prior_start = '''+str(prior_start)+''' deg
-    prior_end = '''+str(prior_end)+''' deg
-
-    Model initialisaion before minimisation (shouldn't have any impact)
-    initmodel_miscal = '''+str(initmodel_miscal)+'''
-
-    Initial values of parameter vectors before initialisation
-    angle_array_start = '''+str(angle_array_start)+'''
-    cosmo_params = '''+str(cosmo_params)+'''
-    '''
-
-    text_file = open(path+'config_'+path[-18:-1]+'.txt', "w+")
-    text_file.write(file_string)
-    text_file.close()
     return 0
 
 
@@ -123,10 +93,21 @@ def main():
         else:
             os.mkdir(save_path)
 
+    INSTRU = 'Planck'
+    if INSTRU == 'SAT':
+        freq_number = 6
+        fsky = 0.1
+        lmin = 30
+        lmax = 300
+
+    if INSTRU == 'Planck':
+        freq_number = 7
+        fsky = 0.6
+        lmin = 51
+        lmax = 1500
+
     nside = 512
-    lmax = 300
-    lmin = 30
-    fsky = 0.1
+
     sky_model = 'c1s0d0'
     sensitiviy_mode = 0
     one_over_f_mode = 0
@@ -143,7 +124,7 @@ def main():
     r_true = 0.01
     beta_true = (0.35 * u.deg).to(u.rad)
 
-    true_miscal_angles = np.array([0]*6)*u.rad
+    true_miscal_angles = np.array([0]*freq_number)*u.rad
     # true_miscal_angles = np.arange(0.1, 0.5, 0.4/6)*u.rad
     prior = True
     prior_indices = []
@@ -155,28 +136,44 @@ def main():
     prior_start = 0.01
     prior_end = 10
 
-    initmodel_miscal = np.array([0]*6)*u.rad
-    angle_array_start = np.array([0., 0., 0., 0., 0., 0., 2, -2.5])
+    initmodel_miscal = np.array([0]*freq_number)*u.rad
+    freq_by_instru = [1]*freq_number
+
+    angle_array_start_list = [0]*freq_number
+    angle_array_start_list.append(2)
+    angle_array_start_list.append(-2.5)
+    angle_array_start = np.array(angle_array_start_list)
+
+    params = ['miscal']*freq_number
+    params.append('spectral')
+    params.append('spectral')
+
+    miscal_bounds = ((-np.pi/4, np.pi/4),)*freq_number
+    spectral_bounds = ((0.5, 2.5), (-5, -1))
+    bounds = miscal_bounds + spectral_bounds
+
     cosmo_params = [0.0, 0.0]
 
     if comm.rank == root:
         parameters2file(save_path, nside, lmax, lmin, fsky, sky_model, sensitiviy_mode,
                         one_over_f_mode, A_lens_true, r_true, beta_true,
                         true_miscal_angles, prior, prior_indices, nsim, prior_start,
-                        prior_end, initmodel_miscal, angle_array_start, cosmo_params, path_BB)
+                        prior_end, initmodel_miscal, angle_array_start, cosmo_params, path_BB, INSTRU)
 
     '''====================================================================='''
 
-    data, model_data = pix.data_and_model_quick(miscal_angles_array=true_miscal_angles, bir_angle=beta_true,
-                                                frequencies_array=V3.so_V3_SA_bands(),
-                                                frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside,
-                                                sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
+    data, model_data = pix.data_and_model_quick(
+        miscal_angles_array=true_miscal_angles, bir_angle=beta_true,
+        frequencies_by_instrument_array=freq_by_instru, nside=nside,
+        sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
+        one_over_f_mode=one_over_f_mode, instrument=INSTRU)
 
-    model = pix.get_model(miscal_angles_array=initmodel_miscal, bir_angle=beta_true,
-                          frequencies_array=V3.so_V3_SA_bands(),
-                          frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1],
-                          nside=nside, spectral_params=[1.59, 20, -3],
-                          sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
+    model = pix.get_model(
+        miscal_angles_array=initmodel_miscal, bir_angle=beta_true,
+        frequencies_by_instrument_array=freq_by_instru,
+        nside=nside, spectral_params=[1.59, 20, -3],
+        sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
+        one_over_f_mode=one_over_f_mode, instrument=INSTRU)
 
     '''===========================getting data==========================='''
 
@@ -220,29 +217,31 @@ def main():
         print('prior_precision', prior_precision)
         angle_prior = []
         if prior:
-            for d in range(6):
+            for d in range(freq_number):
                 angle_prior.append([true_miscal_angles.value[d], prior_precision, int(d)])
             angle_prior = np.array(angle_prior[prior_indices[0]: prior_indices[-1]])
 
-        params = ['miscal']*6
-        params.append('spectral')
-        params.append('spectral')
+        # params = ['miscal']*6
+        # params.append('spectral')
+        # params.append('spectral')
 
         results_min = minimize(get_chi_squared_local, angle_array_start, args=(
             data_model, model, prior, [], angle_prior, False, True, 1, True, params),
             tol=1e-18, options={'maxiter': 1000}, jac=fshp.spectral_first_deriv, method='SLSQP',
-            bounds=((-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (0.5, 2.5), (-5, -1)))
+            bounds=bounds)
 
         print('')
         print(results_min)
         print('')
 
-        model_results = pix.get_model(results_min.x[: 6], bir_angle=beta_true,
-                                      frequencies_array=V3.so_V3_SA_bands(), frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside,
-                                      spectral_params=[results_min.x[-2], 20, results_min.x[-1]],
-                                      sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
+        model_results = pix.get_model(
+            results_min.x[: freq_number], bir_angle=beta_true,
+            frequencies_by_instrument_array=freq_by_instru, nside=nside,
+            spectral_params=[results_min.x[-2], 20, results_min.x[-1]],
+            sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
+            one_over_f_mode=one_over_f_mode, instrument=INSTRU)
 
-        print('results - spectral_true = ', results_min.x[:6] - true_miscal_angles.value)
+        print('results - spectral_true = ', results_min.x[:freq_number] - true_miscal_angles.value)
         print('results - spectral_true = ', results_min.x[-2] - 1.59)
         print('results - spectral_true = ', results_min.x[-1] + 3)
 
@@ -288,7 +287,7 @@ def main():
         results_cosmp = minimize(res.likelihood_exploration, cosmo_params, args=(
             Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky),
             bounds=((-0.01, 0.1), (-np.pi/4, np.pi/4)), tol=1e-18,
-            method='L-BFGS-B')
+            method='L-BFGS-B', jac=res.jac_cosmo)
 
         print('')
         print('results - true cosmo = ', results_cosmp.x - np.array([r_true, beta_true.value]))

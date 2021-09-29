@@ -176,10 +176,10 @@ def diff_diff_bir_matrix(model):
 
 def effectiv_diff_mixing_matrix(diff_index, diff_list, model):
     # print(diff_index)
-    if not diff_index//6:
+    if not diff_index//model.miscal_angles.shape[0]:
         # print('misscal')
         effetiv_diff = diff_list[diff_index].dot(model.mixing_matrix).dot(model.bir_matrix)
-    elif diff_index == 6:
+    elif diff_index == model.miscal_angles.shape[0]:
         # print('birefringence')
         effetiv_diff = model.miscal_matrix.dot(model.mixing_matrix).dot(diff_list[diff_index])
     else:
@@ -208,17 +208,17 @@ def effectiv_diff_mixing_matrix_new(diff_index, diff_list, model, params):
 def effectiv_doublediff_mixing_matrix(diff_index1, diff_index2, diff_list, diff_diff_list, model):
     # print(diff_index1, diff_index2)
     if diff_index1 == diff_index2:
-        if not diff_index1//6:
+        if not diff_index1//model.miscal_angles.shape[0]:
             miscal = diff_diff_list[diff_index1]
         else:
             miscal = model.miscal_matrix
 
-        if diff_index1 == 6:
+        if diff_index1 == model.miscal_angles.shape[0]:
             bir = diff_diff_list[diff_index1]
         else:
             bir = model.bir_matrix
 
-        if diff_index1 == 7 or diff_index1 == 8:
+        if diff_index1 == model.miscal_angles.shape[0]+1 or diff_index1 == model.miscal_angles.shape[0]+2:
             spectral = diff_diff_list[diff_index1]
         else:
             spectral = model.mixing_matrix
@@ -226,38 +226,38 @@ def effectiv_doublediff_mixing_matrix(diff_index1, diff_index2, diff_list, diff_
         # print('diagonal')
         return double_diff_matrix
 
-    if not diff_index1//6 and not diff_index2//6:
+    if not diff_index1//model.miscal_angles.shape[0] and not diff_index2//model.miscal_angles.shape[0]:
         # print('double miscal')
         return np.zeros([len(model.frequencies)*2, 6])
-    elif (diff_index1 == 7 or diff_index1 == 8) and (diff_index2 == 7 or diff_index2 == 8):
+    elif (diff_index1 == model.miscal_angles.shape[0]+1 or diff_index1 == model.miscal_angles.shape[0]+2) and (diff_index2 == model.miscal_angles.shape[0]+1 or diff_index2 == model.miscal_angles.shape[0]+2):
         # print('double spectral')
         return np.zeros([len(model.frequencies)*2, 6])
     else:
-        if not diff_index1//6:
+        if not diff_index1//model.miscal_angles.shape[0]:
             # print('miscal1')
             miscal = diff_list[diff_index1]
-        elif not diff_index2//6:
+        elif not diff_index2//model.miscal_angles.shape[0]:
             # print('miscal2')
             miscal = diff_list[diff_index2]
         else:
             # print('miscal normal')
             miscal = model.miscal_matrix
 
-        if diff_index1 == 6:
+        if diff_index1 == model.miscal_angles.shape[0]:
             # print('bir1')
             bir = diff_list[diff_index1]
-        elif diff_index2 == 6:
+        elif diff_index2 == model.miscal_angles.shape[0]:
             # print('bir2')
             bir = diff_list[diff_index2]
         else:
             # print('bir normal')
             bir = model.bir_matrix
 
-        if diff_index1 == 7 or diff_index1 == 8:
+        if diff_index1 == model.miscal_angles.shape[0]+1 or diff_index1 == model.miscal_angles.shape[0]+2:
             # print('spectral1')
 
             spectral = diff_list[diff_index1]
-        elif diff_index2 == 7 or diff_index2 == 8:
+        elif diff_index2 == model.miscal_angles.shape[0]+1 or diff_index2 == model.miscal_angles.shape[0]+2:
             spectral = diff_list[diff_index2]
             # print('spectral2')
         else:
@@ -454,7 +454,7 @@ def spectral_first_deriv(angle_array, ddt, model, prior=False,
     from residuals import get_diff_list
     # IPython.embed()
     model.evaluate_mixing_matrix([angle_array[-2], 20, angle_array[-1]])
-    model.miscal_angles = angle_array[:6]
+    model.miscal_angles = angle_array[:model.miscal_angles.shape[0]]
     model.bir_angle = 0
 
     model.get_miscalibration_angle_matrix()

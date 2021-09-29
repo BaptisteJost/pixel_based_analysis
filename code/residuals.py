@@ -1,3 +1,4 @@
+from fgbuster.observation_helpers import get_instrument
 import time
 import IPython
 import numpy as np
@@ -581,12 +582,26 @@ def get_Cl_cmbBB(Alens=1., r=0.001, path_BB='.'):
     return power_spectrum
 
 
-def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2):
-    V3_results = V3.so_V3_SA_noise(sensitiviy_mode, one_over_f_mode,
-                                   SAC_yrs_LF=1, f_sky=fsky, ell_max=lmax, beam_corrected=True)
-    noise_nl = np.repeat(V3_results[1], 2, 0)
-    ell_noise = V3_results[0]
-    frequencies = V3.so_V3_SA_bands()
+def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2, instrument='SAT'):
+    if instrument == 'SAT':
+        V3_results = V3.so_V3_SA_noise(sensitiviy_mode, one_over_f_mode,
+                                       SAC_yrs_LF=1, f_sky=fsky, ell_max=lmax, beam_corrected=True)
+        noise_nl = np.repeat(V3_results[1], 2, 0)
+        ell_noise = V3_results[0]
+
+    elif instrument == 'Planck':
+        instru_planck = get_instrument('planck_P')
+        noise_lvl = instru_planck['sens_P']
+        beam_rad = (instru_planck['beams']*u.arcmin).to(u.rad).value
+        ell_noise = np.linspace(2, lmax-1, lmax-2, dtype=int)
+        noise_nl = []
+        for f in range(len(noise_lvl)):
+            Bl = hp.gauss_beam(beam_rad[f], lmax=lmax-1)[2:]
+            noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(len(ell_noise))
+            noise_nl.append(noise / (Bl**2))
+        noise_nl = np.array(noise_nl)
+        noise_nl = np.repeat(noise_nl, 2, 0)
+        # noise_nl = (noise_lvl*np.pi/60/180)**2 * ell_noise
     nl_inv = 1/noise_nl
     AtNA = np.einsum('fi, fl, fj -> lij', A, nl_inv, A)
     inv_AtNA = np.linalg.inv(AtNA)
@@ -714,13 +729,23 @@ def sigma2_int(like_mesh, like_r, like_beta, param_grid, r_index, beta_index):
 
 
 def main():
+    INSTRU = 'SAT'
+    if INSTRU == 'SAT':
+        freq_number = 6
+        fsky = 0.1
+        lmax = 300
+        lmin = 30
+
+    if INSTRU == 'Planck':
+        freq_number = 7
+        fsky = 0.6
+        lmax = 500
+        lmin = 51
     nside = 128
-    lmax = 300
-    lmin = 30
-    fsky = 0.1
+
     sky_model = 'c1s0d0'
-    sensitiviy_mode = 2
-    one_over_f_mode = 2
+    sensitiviy_mode = 1
+    one_over_f_mode = 1
     A_lens_true = 1
     # sensitivity_mode
     #     0: threshold,
@@ -736,7 +761,7 @@ def main():
     beta_true = 0.01 * u.rad
     # beta_true = (0.0*u.deg).to(u.rad)
 
-    true_miscal_angles = np.array([0]*6)*u.rad
+    true_miscal_angles = np.array([0]*freq_number)*u.rad
     # true_miscal_angles = np.arange(0.1, 0.5, 0.4/6)*u.rad
     # true_miscal_angles = np.array([0]*6)*u.rad
     # true_miscal_angles[0] = 0.4333*u.rad
@@ -744,8 +769,8 @@ def main():
     prior = True
     prior_indices = []
     if prior:
-        prior_indices = [0, 6]
-    prior_precision = (7 * u.deg).to(u.rad).value
+        prior_indices = [3, 4]
+    prior_precision = (0.1 * u.deg).to(u.rad).value
     prior_str = '{:1.1e}rad'.format(prior_precision)
 
     save_path = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/test/'
@@ -756,20 +781,36 @@ def main():
 
     nsim = 1000
 
+    initmodel_miscal = np.array([0]*freq_number)*u.rad
+    freq_by_instru = [1]*freq_number
+
+    angle_array_start_list = [0]*freq_number
+    angle_array_start_list.append(2)
+    angle_array_start_list.append(-2.5)
+    angle_array_start = np.array(angle_array_start_list)
+
+    params = ['miscal']*freq_number
+    params.append('spectral')
+    params.append('spectral')
+
+    miscal_bounds = ((-np.pi/4, np.pi/4),)*freq_number
+    spectral_bounds = ((0.5, 2.5), (-5, -1))
+    bounds = miscal_bounds + spectral_bounds
+
     '''====================================================================='''
 
-    initmodel_miscal = np.array([0]*6)*u.rad
+    data, model_data = pix.data_and_model_quick(
+        miscal_angles_array=true_miscal_angles, bir_angle=beta_true,
+        frequencies_by_instrument_array=freq_by_instru, nside=nside,
+        sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
+        one_over_f_mode=one_over_f_mode, instrument=INSTRU)
 
-    data, model_data = pix.data_and_model_quick(miscal_angles_array=true_miscal_angles, bir_angle=beta_true,
-                                                frequencies_array=V3.so_V3_SA_bands(),
-                                                frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside,
-                                                sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
-
-    model = pix.get_model(miscal_angles_array=initmodel_miscal, bir_angle=beta_true,
-                          frequencies_array=V3.so_V3_SA_bands(),
-                          frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1],
-                          nside=nside, spectral_params=[1.59, 20, -3],
-                          sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
+    model = pix.get_model(
+        miscal_angles_array=initmodel_miscal, bir_angle=beta_true,
+        frequencies_by_instrument_array=freq_by_instru,
+        nside=nside, spectral_params=[1.59, 20, -3],
+        sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
+        one_over_f_mode=one_over_f_mode, instrument=INSTRU)
 
     '''===========================getting data==========================='''
 
@@ -797,13 +838,12 @@ def main():
     F = np.sum(ddt_fg, axis=-1)/n_obspix
     data_model = n_obspix*(F + ASAt + model_data.noise_covariance)
 
-    angle_array_start = np.array([0., 0., 0., 0., 0., 0., 2, -2.5])
     # angle_array_start = np.array([0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 2, -2.5])
     # angle_array_start = np.array([0., 0., 0., 0., 0., 0., 1.59, -3])
 
     angle_prior = []
     if prior:
-        for d in range(6):
+        for d in range(freq_number):
             angle_prior.append([true_miscal_angles.value[d], prior_precision, int(d)])
             # angle_prior.append([(1*u.deg).to(u.rad).value, prior_precision, int(d)])
         angle_prior = np.array(angle_prior[prior_indices[0]: prior_indices[-1]])
@@ -822,25 +862,26 @@ def main():
     # results_min = minimize(get_chi_squared_local, angle_array_start, args=(
     #                        data_model, model, prior, [], angle_prior, False, True, 1, True),
     #                        bounds=((-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (-0.5, 0.5), (0.5, 2.5), (-5, -1)), tol=1e-18)
-    params = ['miscal']*6
-    params.append('spectral')
-    params.append('spectral')
 
     # results_min = minimize(get_chi_squared_local, angle_array_start, args=(
     #                        data_model, model, prior, [], angle_prior, False, True, 1, True),
     #                        tol=1e-18, method='L-BFGS-B', options={'maxiter': 1000},
     #                        bounds=((-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (0.5, 2.5), (-5, -1)))
+
+    # IPython.embed()
     results_min = minimize(get_chi_squared_local, angle_array_start, args=(
         data_model, model, prior, [], angle_prior, False, True, 1, True, params),
         tol=1e-18, options={'maxiter': 1000}, jac=fshp.spectral_first_deriv, method='SLSQP',
-        bounds=((-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (0.5, 2.5), (-5, -1)))
+        bounds=bounds)
 
     chi2_min = get_chi_squared_local(results_min.x, data_model, model,
                                      prior, [], angle_prior, False, True, 1, True)
     # chi2_minjac = get_chi_squared_local(results_minjac.x, data_model, model,
     #                                     prior, [], angle_prior, False, True, 1, True)
-
-    chi2_true = get_chi_squared_local([0, 0, 0, 0, 0, 0, 1.59, -3], data_model, model,
+    param_true = [0]*freq_number
+    param_true.append(1.59)
+    param_true.append(-3)
+    chi2_true = get_chi_squared_local(param_true, data_model, model,
                                       prior, [], angle_prior, False, True, 1, True)
     print('delta chi2 = ', chi2_min - chi2_true)
     print('delta alpha = ', true_miscal_angles.value[2] - results_min.x[2])
@@ -856,11 +897,13 @@ def main():
     # print(results_min.x)
     # print('')
 
-    model_results = pix.get_model(results_min.x[: 6], bir_angle=beta_true,
-                                  frequencies_array=V3.so_V3_SA_bands(), frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside,
-                                  spectral_params=[results_min.x[-2], 20, results_min.x[-1]],
-                                  sky_model=sky_model, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
-    print('results - spectral_true = ', results_min.x[:6] - true_miscal_angles.value)
+    model_results = pix.get_model(
+        results_min.x[: freq_number], bir_angle=beta_true,
+        frequencies_by_instrument_array=freq_by_instru, nside=nside,
+        spectral_params=[results_min.x[-2], 20, results_min.x[-1]],
+        sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
+        one_over_f_mode=one_over_f_mode, instrument=INSTRU)
+    print('results - spectral_true = ', results_min.x[:freq_number] - true_miscal_angles.value)
     print('results - spectral_true = ', results_min.x[-2] - 1.59)
     print('results - spectral_true = ', results_min.x[-1] + 3)
     # np.save(save_path+'miscal_mini_pior2to4_'+prior_str+r_str, results_min.x)
@@ -932,6 +975,7 @@ def main():
         model_results, fg_freq_maps, sigma_spectral, lmin, lmax, fsky, params,
         cmb_spectra=spectra_true, true_A_cmb=model_data.mix_effectiv[:, :2])
     print('residuals estimation time = ', time.time() - start_residuals)
+    IPython.embed()
     np.save(save_path+'sigma_miscal_eval_pior2to4_'+prior_str+r_str, sigma_spectral)
     np.save(save_path+'stat_residuals_eval_pior2to4_'+prior_str+r_str, stat)
     np.save(save_path+'bias_residuals_eval_pior2to4_'+prior_str+r_str, bias)
@@ -946,7 +990,7 @@ def main():
     Cl_fid['EE'] = ps_planck[1, lmin:lmax+1]
 
     Cl_noise, ell_noise = get_noise_Cl(
-        model_results.mix_effectiv, lmax+1, fsky, sensitiviy_mode, one_over_f_mode)
+        model_results.mix_effectiv, lmax+1, fsky, sensitiviy_mode, one_over_f_mode, instrument=INSTRU)
     Cl_noise = Cl_noise[lmin-2:]
     ell_noise = ell_noise[lmin-2:]
     Cl_noise_matrix = np.zeros([2, 2, Cl_noise.shape[0]])

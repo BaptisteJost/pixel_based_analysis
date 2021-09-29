@@ -78,21 +78,23 @@ def get_chi_squared_local(angle_array, ddtPN, model_skm, prior=False,
         return chi_squared
 
 
-def data_and_model_quick(miscal_angles_array, frequencies_array,
-                         frequencies_by_instrument_array, bir_angle=0*u.rad,
+def data_and_model_quick(miscal_angles_array, frequencies_by_instrument_array, bir_angle=0*u.rad,
                          nside=512, spectral_params=[1.59, 20, -3], sky_model='c1s0d0',
-                         sensitiviy_mode=2, one_over_f_mode=2):
+                         sensitiviy_mode=2, one_over_f_mode=2, instrument='SAT'):
 
     data = lSO.sky_map(bir_angle=bir_angle, miscal_angles=miscal_angles_array,
-                       frequencies_by_instrument=frequencies_by_instrument_array, nside=nside, sky_model=sky_model)
+                       frequencies_by_instrument=frequencies_by_instrument_array,
+                       nside=nside, sky_model=sky_model, instrument=instrument)
     model = lSO.sky_map(bir_angle=bir_angle, miscal_angles=miscal_angles_array,
-                        frequencies_by_instrument=frequencies_by_instrument_array, nside=nside, sky_model=sky_model)
+                        frequencies_by_instrument=frequencies_by_instrument_array,
+                        nside=nside, sky_model=sky_model, instrument=instrument)
 
-    v3f = V3.so_V3_SA_bands()
-    index = np.in1d(v3f, frequencies_array).nonzero()[0]
+    # v3f = V3.so_V3_SA_bands()
+    # index = np.in1d(v3f, frequencies_array).nonzero()[0]
 
     data.get_pysm_sky()
-    data.frequencies = frequencies_array
+    # data.frequencies = frequencies_array
+    data.get_frequency()
 
     data.get_freq_maps()
     data.cmb_rotation()
@@ -103,42 +105,41 @@ def data_and_model_quick(miscal_angles_array, frequencies_array,
     data.get_miscalibration_angle_matrix()
     data.get_data()
 
-    model.frequencies = frequencies_array
+    # model.frequencies = frequencies_array
+    model.get_frequency()
+
     model.get_bir_matrix()
     model.get_A_ev(fix_temp=True)
     model.evaluate_mixing_matrix(spectral_params)
 
     model.get_miscalibration_angle_matrix()
     model.get_noise(sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
-    model.inv_noise = model.inv_noise[index[0]*2:index[-1]*2 + 2,
-                                      index[0]*2:index[-1]*2 + 2]
-    model.noise_covariance = model.noise_covariance[index[0]*2:index[-1]*2 + 2,
-                                                    index[0]*2:index[-1]*2 + 2]
+    # model.inv_noise = model.inv_noise[index[0]*2:index[-1]*2 + 2,
+    #                                   index[0]*2:index[-1]*2 + 2]
+    # model.noise_covariance = model.noise_covariance[index[0]*2:index[-1]*2 + 2,
+    #                                                 index[0]*2:index[-1]*2 + 2]
     model.get_projection_op()
 
     return data, model
 
 
-def get_model(miscal_angles_array, frequencies_array,
-              frequencies_by_instrument_array, bir_angle=0*u.rad,
-              nside=512, spectral_params=[1.59, 20, -3], sky_model='c1s0d0',
-              sensitiviy_mode=2, one_over_f_mode=2):
-    v3f = V3.so_V3_SA_bands()
-    index = np.in1d(v3f, frequencies_array).nonzero()[0]
-    model = lSO.sky_map(bir_angle=bir_angle, miscal_angles=miscal_angles_array,
-                        frequencies_by_instrument=frequencies_by_instrument_array, nside=nside, sky_model=sky_model)
+def get_model(miscal_angles_array, frequencies_by_instrument_array,
+              bir_angle=0*u.rad, nside=512, spectral_params=[1.59, 20, -3],
+              sky_model='c1s0d0', sensitiviy_mode=2, one_over_f_mode=2,
+              instrument='SAT'):
 
-    model.frequencies = frequencies_array
+    model = lSO.sky_map(bir_angle=bir_angle, miscal_angles=miscal_angles_array,
+                        frequencies_by_instrument=frequencies_by_instrument_array,
+                        nside=nside, sky_model=sky_model, instrument=instrument)
+
+    model.get_frequency()
     model.get_bir_matrix()
     model.get_A_ev(fix_temp=True)
     model.evaluate_mixing_matrix(spectral_params)
 
     model.get_miscalibration_angle_matrix()
     model.get_noise(sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
-    model.inv_noise = model.inv_noise[index[0]*2:index[-1]*2 + 2,
-                                      index[0]*2:index[-1]*2 + 2]
-    model.noise_covariance = model.noise_covariance[index[0]*2:index[-1]*2 + 2,
-                                                    index[0]*2:index[-1]*2 + 2]
+
     model.get_projection_op()
 
     return model
