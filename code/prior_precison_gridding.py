@@ -93,7 +93,7 @@ def main():
         else:
             os.mkdir(save_path)
 
-    INSTRU = 'Planck'
+    INSTRU = 'SAT'
     if INSTRU == 'SAT':
         freq_number = 6
         fsky = 0.1

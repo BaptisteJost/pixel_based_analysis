@@ -14,5 +14,5 @@ export OMP_PROC_BIND=spread
 
 
 #run the application:
-srun -n 40 -c 2 --cpu_bind=cores python /global/homes/j/jost/these/pixel_based_analysis/code/prior_precison_gridding.py
+srun -n 4 -c 32 --cpu_bind=cores python /global/homes/j/jost/these/pixel_based_analysis/code/prior_precison_gridding.py
 srun -n 1 -c 1 --cpu_bind=cores python /global/homes/j/jost/these/pixel_based_analysis/code/graph_prior_precision.py
