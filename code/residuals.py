@@ -211,6 +211,7 @@ def get_ys_Cls(X_alms, Y_alms, lmax, fsky=1):
 
 def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spectra=None, true_A_cmb=None):
     '''============================computing Ws============================'''
+    start_Ws = time.time()
     diff_list = get_diff_list(model, params)
     diff_diff_list = get_diff_diff_list(model, params)
 
@@ -222,20 +223,49 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
                                   AitNm1_list, term1_list, term2_list, invAtNm1A=None)
 
     diff_W = np.array(diff_W)
-
-    '''===========================Computing ys==========================='''
+    print('time Ws = ', time.time() - start_Ws)
+    '''========================Computing ys and alms========================'''
     # print('WARNING FSKY !!!!')
+    start_ys = time.time()
 
     y_Q = W[0].dot(fg_freq_maps)
     y_U = W[1].dot(fg_freq_maps)
+    y_alms = get_ys_alms(y_Q=y_Q, y_U=y_U, lmax=lmax)
+    del y_Q, y_U
+
     Y_Q = diff_W[:, 0].dot(fg_freq_maps)
     Y_U = diff_W[:, 1].dot(fg_freq_maps)
+    Y_alms = get_ys_alms(y_Q=Y_Q, y_U=Y_U, lmax=lmax)
+    del Y_Q, Y_U
+
     V_Q = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 0])
     V_U = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 1])
     z_Q = V_Q.dot(fg_freq_maps)
     z_U = V_U.dot(fg_freq_maps)
+    z_alms = get_ys_alms(y_Q=z_Q, y_U=z_U, lmax=lmax)
+    del V_Q, V_U, z_Q, z_U
+    print('time ys = ', time.time() - start_ys)
+
+    # '''===========================computing alms==========================='''
+
+    '''===========================computing Cls==========================='''
+    start_cl = time.time()
+    Cl = {}
+    Cl['yy'] = get_ys_Cls(y_alms, y_alms, lmax, fsky)[:, lmin:]
+    Cl['YY'] = get_ys_Cls(Y_alms, Y_alms, lmax, fsky)[:, :, :, lmin:]
+    Cl['yz'] = get_ys_Cls(y_alms, z_alms, lmax, fsky)[:, lmin:]
+    Cl['zy'] = get_ys_Cls(z_alms, y_alms, lmax, fsky)[:, lmin:]
+
+    Cl['Yy'] = get_ys_Cls(Y_alms, y_alms, lmax, fsky)[:, :, lmin:]
+    # Cl['yY'] = get_ys_Cls(y_alms, Y_alms, lmax, fsky)
+    print('DANGER need to compute yY and zY in residuals ! EB and BE asymmetry otherwise')
+    Cl['Yz'] = get_ys_Cls(Y_alms, z_alms, lmax, fsky)[:, :, lmin:]  # attention à checker
+    # Cl['zY'] = get_ys_Cls(z_alms, Y_alms, lmax, fsky)  # attention à checker
+    del z_alms, Y_alms, y_alms
+    print('time Cls = ', time.time() - start_cl)
 
     if cmb_spectra is not None:
+        start_clmatrixcmb = time.time()
         Cl_cmb = {}
         # IPython.embed()
         # cl_substract = 0
@@ -251,59 +281,68 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
         if len(cmb_spectra) == 6:
             Cl_matrix[1, 0] = cmb_spectra[4]
             Cl_matrix[0, 1] = cmb_spectra[4]
+        print('time cl matrix cmb = ', time.time() - start_clmatrixcmb)
 
         # yy_cmb1 = np.einsum('ij,jkl,km->iml', WA_cmb.T, Cl_matrix, WA_cmb)
         # yy_cmb2 = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_matrix, WA_cmb.T)
         # yy_cmb = yy_cmb2 - Cl_matrix * cl_substract
+        start_ycmb = time.time()
         yy_cmb = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_matrix, WA_cmb.T)
 
         YY_cmb_matrix = np.zeros([sigma.shape[0], sigma.shape[0], Cl_matrix.shape[0],
                                   Cl_matrix.shape[1], Cl_matrix.shape[2]])
-        YY_cmb_matrix2 = np.zeros([sigma.shape[0], sigma.shape[0], Cl_matrix.shape[0],
-                                   Cl_matrix.shape[1], Cl_matrix.shape[2]])
+        # YY_cmb_matrix2 = np.zeros([sigma.shape[0], sigma.shape[0], Cl_matrix.shape[0],
+        #                            Cl_matrix.shape[1], Cl_matrix.shape[2]])
         for i in range(sigma.shape[0]):
             for ii in range(sigma.shape[0]):
                 YY_cmb_matrix[i, ii] = np.einsum(
                     'ij,jkl,km->iml', W_dB_cmb[i].T, Cl_matrix, W_dB_cmb[ii])
-                YY_cmb_matrix2[i, ii] = np.einsum(
-                    'ij,jkl,km->iml', W_dB_cmb[i], Cl_matrix, W_dB_cmb[ii].T)
+                # YY_cmb_matrix2[i, ii] = np.einsum(
+                #     'ij,jkl,km->iml', W_dB_cmb[i], Cl_matrix, W_dB_cmb[ii].T)
+        print('time yy YY cmb = ', time.time() - start_ycmb)
 
+        start_Vcmb = time.time()
         V_cmb = np.einsum('ij,ij...->...', sigma, W_dBdB_cmb[:, :])
+        # V2 = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, :2, :])
         # yz_cmb = np.einsum('ji,jkl,km->iml', V_cmb, Cl_matrix, WA_cmb)
         # zy_cmb = np.einsum('ji,jkl,km->iml', WA_cmb, Cl_matrix, V_cmb)
-        yz_cmb1 = []
-        zy_cmb1 = []
-        yz_cmb2 = []
-        zy_cmb2 = []
+        # yz_cmb1 = []
+        # zy_cmb1 = []
+        yz_cmb = []
+        zy_cmb = []
         for l in range(Cl_matrix.shape[-1]):
-            yz_cmb1.append(V_cmb.T.dot(Cl_matrix[:, :, l]).dot(WA_cmb))
-            zy_cmb1.append(WA_cmb.T.dot(Cl_matrix[:, :, l]).dot(V_cmb))
+            # yz_cmb1.append(V_cmb.T.dot(Cl_matrix[:, :, l]).dot(WA_cmb))
+            # zy_cmb1.append(WA_cmb.T.dot(Cl_matrix[:, :, l]).dot(V_cmb))
 
-            yz_cmb2.append(V_cmb.dot(Cl_matrix[:, :, l]).dot(WA_cmb.T))
-            zy_cmb2.append(WA_cmb.dot(Cl_matrix[:, :, l]).dot(V_cmb.T))
-        yz_cmb1 = np.array(yz_cmb1).T
-        zy_cmb1 = np.array(zy_cmb1).T
-        yz_cmb2 = np.array(yz_cmb2).T
-        zy_cmb2 = np.array(zy_cmb2).T
-        yz_cmb = yz_cmb2
-        zy_cmb = zy_cmb2
-
+            yz_cmb.append(V_cmb.dot(Cl_matrix[:, :, l]).dot(WA_cmb.T))
+            zy_cmb.append(WA_cmb.dot(Cl_matrix[:, :, l]).dot(V_cmb.T))
+        # yz_cmb1 = np.array(yz_cmb1).T
+        # zy_cmb1 = np.array(zy_cmb1).T
+        yz_cmb = np.array(yz_cmb).T
+        zy_cmb = np.array(zy_cmb).T
+        # yz_cmb = yz_cmb2
+        # zy_cmb = zy_cmb2
+        print('time V, yz, zy cmb = ', time.time() - start_Vcmb)
         # IPython.embed()
+        start_Yy = time.time()
         Yy_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
                            Cl_matrix.shape[1], Cl_matrix.shape[2]])
-        yY_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
-                           Cl_matrix.shape[1], Cl_matrix.shape[2]])
+        # yY_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
+        #                    Cl_matrix.shape[1], Cl_matrix.shape[2]])
         for i in range(sigma.shape[0]):
             Yy_cmb[i] = np.einsum('ij,jkl,km->iml', W_dB_cmb[i].T, Cl_matrix, WA_cmb)
-            yY_cmb[i] = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_matrix, W_dB_cmb[i].T)
+            # yY_cmb[i] = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_matrix, W_dB_cmb[i].T)
+        print('time Yy cmb = ', time.time() - start_Yy)
 
+        start_Yz = time.time()
         Yz_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
                            Cl_matrix.shape[1], Cl_matrix.shape[2]])
-        zY_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
-                           Cl_matrix.shape[1], Cl_matrix.shape[2]])
+        # zY_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
+        #                    Cl_matrix.shape[1], Cl_matrix.shape[2]])
         for i in range(sigma.shape[0]):
             Yz_cmb[i] = np.einsum('ij,jkl,km->iml', W_dB_cmb[i].T, Cl_matrix, V_cmb)
-            zY_cmb[i] = np.einsum('ij,jkl,km->iml', V_cmb, Cl_matrix, W_dB_cmb[i].T)
+            # zY_cmb[i] = np.einsum('ij,jkl,km->iml', V_cmb, Cl_matrix, W_dB_cmb[i].T)
+        print('time Yz cmb = ', time.time() - start_Yz)
 
         Cl_cmb['yy'] = yy_cmb[:, :, lmin:lmax+1]
         Cl_cmb['YY'] = YY_cmb_matrix[:, :, :, :, lmin:lmax+1]
@@ -316,23 +355,24 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
         Cl_cmb['Yz'] = Yz_cmb[:, :, :, lmin:lmax+1]
         # Cl_cmb['zY'] = zY_cmb
         # IPython.embed()
-    '''===========================computing alms==========================='''
 
-    y_alms = get_ys_alms(y_Q=y_Q, y_U=y_U, lmax=lmax)
-    Y_alms = get_ys_alms(y_Q=Y_Q, y_U=Y_U, lmax=lmax)
-    z_alms = get_ys_alms(y_Q=z_Q, y_U=z_U, lmax=lmax)
-    '''===========================computing Cls==========================='''
-    Cl = {}
-    Cl['yy'] = get_ys_Cls(y_alms, y_alms, lmax, fsky)[:, lmin:]
-    Cl['YY'] = get_ys_Cls(Y_alms, Y_alms, lmax, fsky)[:, :, :, lmin:]
-    Cl['yz'] = get_ys_Cls(y_alms, z_alms, lmax, fsky)[:, lmin:]
-    Cl['zy'] = get_ys_Cls(z_alms, y_alms, lmax, fsky)[:, lmin:]
-
-    Cl['Yy'] = get_ys_Cls(Y_alms, y_alms, lmax, fsky)[:, :, lmin:]
-    # Cl['yY'] = get_ys_Cls(y_alms, Y_alms, lmax, fsky)
-    print('DANGER need to compute yY and zY in residuals ! EB and BE asymmetry otherwise')
-    Cl['Yz'] = get_ys_Cls(Y_alms, z_alms, lmax, fsky)[:, :, lmin:]  # attention à checker
-    # Cl['zY'] = get_ys_Cls(z_alms, Y_alms, lmax, fsky)  # attention à checker
+    # '''===========================computing alms==========================='''
+    #
+    # y_alms = get_ys_alms(y_Q=y_Q, y_U=y_U, lmax=lmax)
+    # Y_alms = get_ys_alms(y_Q=Y_Q, y_U=Y_U, lmax=lmax)
+    # z_alms = get_ys_alms(y_Q=z_Q, y_U=z_U, lmax=lmax)
+    # '''===========================computing Cls==========================='''
+    # Cl = {}
+    # Cl['yy'] = get_ys_Cls(y_alms, y_alms, lmax, fsky)[:, lmin:]
+    # Cl['YY'] = get_ys_Cls(Y_alms, Y_alms, lmax, fsky)[:, :, :, lmin:]
+    # Cl['yz'] = get_ys_Cls(y_alms, z_alms, lmax, fsky)[:, lmin:]
+    # Cl['zy'] = get_ys_Cls(z_alms, y_alms, lmax, fsky)[:, lmin:]
+    #
+    # Cl['Yy'] = get_ys_Cls(Y_alms, y_alms, lmax, fsky)[:, :, lmin:]
+    # # Cl['yY'] = get_ys_Cls(y_alms, Y_alms, lmax, fsky)
+    # print('DANGER need to compute yY and zY in residuals ! EB and BE asymmetry otherwise')
+    # Cl['Yz'] = get_ys_Cls(Y_alms, z_alms, lmax, fsky)[:, :, lmin:]  # attention à checker
+    # # Cl['zY'] = get_ys_Cls(z_alms, Y_alms, lmax, fsky)  # attention à checker
 
     if cmb_spectra is not None:
         def Cl_adder(Cl_fg, Cl_cmb):
@@ -389,21 +429,23 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
                     Cl_out[key] = Cl_cmb[key][:, :, :] + temp_matrix_shape
             print('key_counter = ', key_counter)
             return Cl_out
+        start_adder = time.time()
         Cl_out = Cl_adder(Cl, Cl_cmb)
         Cl_out_matrix = Cl_adder_matrix(Cl, Cl_cmb, lmin, lmax)
         ell = np.arange(lmin, lmax+1)
+        print('time adder = ', time.time() - start_adder)
         # IPython.embed()
         # Cl_out2 = Cl_adder(Cl, Cl_cmb2)
     '''========================computing residuals========================'''
     if cmb_spectra is not None:
         # IPython.embed()
-
+        start_last = time.time()
         stat = np.einsum('ij,ij...->...', sigma, Cl_out['YY'])
         bias = Cl_out['yy'] + Cl_out['yz'] + Cl_out['zy']
         var = stat**2 + 2 * np.einsum('i...,ij,j...->...',
                                       Cl_out['Yy'], sigma, Cl_out['Yy'])
-
-        return stat, bias, var, Cl, Cl_cmb, Cl_out_matrix, ell, WA_cmb
+        print('time last = ', time.time() - start_last)
+        return stat, bias, var, Cl, Cl_cmb, Cl_out_matrix, ell, W[:2], diff_diff_W[:, :, :2, :]
 
     else:
         stat = np.einsum('ij,ij...->...', sigma, Cl['YY'])
@@ -488,11 +530,11 @@ def cosmo_likelihood_nodeprojection(Cl_model_total, Cl_data, ell, fsky):
     return first_term + logdetC
 
 
-def likelihood_exploration(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky):
+def likelihood_exploration(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, WA_cmb, VA_cmb, ell, fsky):
     r = cosmo_params[0]
 
     beta = cosmo_params[1]*u.rad
-    print('r', r, ' beta ', beta)
+    # print('r', r, ' beta ', beta)
     Cl_cmb_model = np.zeros([4, Cl_fid['EE'].shape[0]])
     Cl_cmb_model[1] = copy.deepcopy(Cl_fid['EE'])
     Cl_cmb_model[2] = copy.deepcopy(Cl_fid['BlBl'])*1 + copy.deepcopy(Cl_fid['BuBu']) * r
@@ -505,16 +547,22 @@ def likelihood_exploration(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_Si
     Cl_cmb_rot_matrix[1, 0] = copy.deepcopy(Cl_cmb_rot[4])
     Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
 
-    Cl_model_total = Cl_cmb_rot_matrix + Cl_noise_matrix + tr_SigmaYY
+    WACAW = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
+    WACAV = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, VA_cmb.T)
+    VACAW = np.einsum('ij,jkl,km->iml', VA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
+    print(np.max(np.abs((WACAV-VACAW)/WACAV)))
+    # IPython.embed()
+    # Cl_model_total = Cl_cmb_rot_matrix + Cl_noise_matrix + tr_SigmaYY
+    Cl_model_total = WACAW + Cl_noise_matrix + tr_SigmaYY + VACAW + WACAV
     # IPython.embed()
 
     likelihood = cosmo_likelihood_nodeprojection(
         Cl_model_total, Cl_data, ell, fsky)
-    print('-2logL = ', likelihood)
+    # print('-2logL = ', likelihood)
     return likelihood
 
 
-def jac_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky):
+def jac_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, WA_cmb, VA_cmb, ell, fsky):
     r = cosmo_params[0]
     # IPython.embed()
     beta = cosmo_params[1]*u.rad
@@ -535,7 +583,12 @@ def jac_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, f
     Cl_cmb_rot_matrix[1, 0] = copy.deepcopy(Cl_cmb_rot[4])
     Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
 
-    Cl_model_total = Cl_cmb_rot_matrix + Cl_noise_matrix  # + tr_SigmaYY
+    WACAV = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, VA_cmb.T)
+    VACAW = np.einsum('ij,jkl,km->iml', VA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
+    WACAW = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
+
+    # Cl_model_total = Cl_cmb_rot_matrix + Cl_noise_matrix + tr_SigmaYY
+    Cl_model_total = WACAW + Cl_noise_matrix + tr_SigmaYY + VACAW + WACAV
 
     inv_model = np.linalg.inv(Cl_model_total.T).T
     dof = (2 * ell + 1) * fsky
@@ -546,13 +599,22 @@ def jac_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, f
     dCldr[1, 1] = copy.deepcopy(Cl_cmb_dr_rot[2])
     dCldr[1, 0] = copy.deepcopy(Cl_cmb_dr_rot[4])
     dCldr[0, 1] = copy.deepcopy(Cl_cmb_dr_rot[4])
+    WACAVdr = np.einsum('ij,jkl,km->iml', WA_cmb, dCldr, VA_cmb.T)
+    VACAWdr = np.einsum('ij,jkl,km->iml', VA_cmb, dCldr, WA_cmb.T)
+    WACAWdr = np.einsum('ij,jkl,km->iml', WA_cmb, dCldr, WA_cmb.T)
+    WdCldr = WACAWdr + VACAWdr + WACAVdr
 
     dCldbeta = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
     dCldbeta[0, 0] = copy.deepcopy(Cl_cmb_derivrot[1])
     dCldbeta[1, 1] = copy.deepcopy(Cl_cmb_derivrot[2])
     dCldbeta[1, 0] = copy.deepcopy(Cl_cmb_derivrot[4])
     dCldbeta[0, 1] = copy.deepcopy(Cl_cmb_derivrot[4])
-    deriv_list = [dCldr, dCldbeta]
+    WACAVdb = np.einsum('ij,jkl,km->iml', WA_cmb, dCldbeta, VA_cmb.T)
+    VACAWdb = np.einsum('ij,jkl,km->iml', VA_cmb, dCldbeta, WA_cmb.T)
+    WACAWdb = np.einsum('ij,jkl,km->iml', WA_cmb, dCldbeta, WA_cmb.T)
+    WdCldbeta = WACAWdb + VACAWdb + WACAVdb
+    # deriv_list = [dCldr, dCldbeta]
+    deriv_list = [WdCldr, WdCldbeta]
 
     d_Cl = []
     for i in range(2):
@@ -741,11 +803,11 @@ def main():
         fsky = 0.6
         lmax = 500
         lmin = 51
-    nside = 128
+    nside = 512
 
     sky_model = 'c1s0d0'
-    sensitiviy_mode = 1
-    one_over_f_mode = 1
+    sensitiviy_mode = 0
+    one_over_f_mode = 0
     A_lens_true = 1
     # sensitivity_mode
     #     0: threshold,
@@ -758,26 +820,26 @@ def main():
 
     r_true = 0.01
     r_str = '_r0p01'
-    beta_true = 0.01 * u.rad
+    beta_true = (0.35 * u.deg).to(u.rad)
     # beta_true = (0.0*u.deg).to(u.rad)
 
-    true_miscal_angles = np.array([0]*freq_number)*u.rad
-    # true_miscal_angles = np.arange(0.1, 0.5, 0.4/6)*u.rad
+    # true_miscal_angles = np.array([0]*freq_number)*u.rad
+    true_miscal_angles = np.arange(0.1, 0.5, 0.4/6)*u.rad
     # true_miscal_angles = np.array([0]*6)*u.rad
     # true_miscal_angles[0] = 0.4333*u.rad
 
     prior = True
     prior_indices = []
     if prior:
-        prior_indices = [3, 4]
-    prior_precision = (0.1 * u.deg).to(u.rad).value
+        prior_indices = [2, 3]
+    prior_precision = (1 * u.deg).to(u.rad).value
     prior_str = '{:1.1e}rad'.format(prior_precision)
 
     save_path = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/test/'
 
     path_BB_local = '/home/baptiste/BBPipe'
     path_BB_NERSC = '/global/homes/j/jost/BBPipe'
-    path_BB = path_BB_local
+    path_BB = path_BB_NERSC
 
     nsim = 1000
 
@@ -796,6 +858,13 @@ def main():
     miscal_bounds = ((-np.pi/4, np.pi/4),)*freq_number
     spectral_bounds = ((0.5, 2.5), (-5, -1))
     bounds = miscal_bounds + spectral_bounds
+    cosmo_params = [0.03, 0.04]
+    bounds_cosmo = ((-0.01, 0.1), (-np.pi/4, np.pi/4))
+    # bounds_cosmo = ((-0.01, 0.1), (None, None))
+    # bounds_cosmo = ((None, None), (None, None))
+    method_cosmo = 'L-BFGS-B'
+    # jac_cosmo_min = None
+    jac_cosmo_min = jac_cosmo
 
     '''====================================================================='''
 
@@ -871,9 +940,12 @@ def main():
     # IPython.embed()
     results_min = minimize(get_chi_squared_local, angle_array_start, args=(
         data_model, model, prior, [], angle_prior, False, True, 1, True, params),
-        tol=1e-18, options={'maxiter': 1000}, jac=fshp.spectral_first_deriv, method='SLSQP',
+        tol=1e-18, options={'maxiter': 1000}, jac=fshp.spectral_first_deriv, method='L-BFGS-B',
         bounds=bounds)
-
+    print(results_min)
+    # results_min.x[:freq_number] = 0
+    # results_min.x[-2] = 1.59
+    # results_min.x[-1] = -3
     chi2_min = get_chi_squared_local(results_min.x, data_model, model,
                                      prior, [], angle_prior, False, True, 1, True)
     # chi2_minjac = get_chi_squared_local(results_minjac.x, data_model, model,
@@ -924,63 +996,17 @@ def main():
     sigma_spectral = np.linalg.inv(fisher_matrix_prior_spectral)
 
     start_residuals = time.time()
-    '''
-    sigma_spectral_1D = 1/fisher_matrix_prior_spectral
-    chi2_grid_min = []
-    first_deriv_grid = []
-    angle_array_grid = copy.deepcopy(results_min.x)
-    angle_array_grid_true = copy.deepcopy(true_miscal_angles.value.tolist())
-    angle_array_grid_true.append(1.59)
-    angle_array_grid_true.append(-3)
-    # angle_array_grid_deriv = copy.deepcopy(results_minjac.x)
-    for i in alpha_grid:
-        angle_array_grid[2] = i
-        # angle_array_grid_deriv[5] = i
-        angle_array_grid_true[2] = i
-        chi2_grid_min.append(get_chi_squared_local(angle_array_grid, data_model,
-                                                   model, prior, [], angle_prior, False, True, 1, False))
-        # first_deriv_grid.append(fshp.spectral_first_deriv(
-        #     angle_array_grid, data_model, model, diff_list_res, params, angle_prior))
-        # first_deriv_grid.append(fshp.spectral_first_deriv(
-        #     angle_array_grid_deriv, data_model, model, prior, [], angle_prior, False, True, 1, True, params))
 
-    # np.save('grid_prior0p01deg_b0_r0_n128_minimisation', chi2_grid)
-    import scipy as sc
-    import scipy.stats as st
-    chi2_grid = np.array(chi2_grid)
-    chi2_grid_min = np.array(chi2_grid_min)
-    first_deriv_grid = np.array(first_deriv_grid)
-    # gaussianM = st.norm.pdf(alpha_grid, 0, sc.linalg.sqrtm(sigma_spectral)[2, 2])
-    gaussianM = st.norm.pdf(alpha_grid, 0, np.sqrt(sigma_spectral_1D)[2, 2]*np.sqrt(2))
-    '''
-    '''
-    WARNING : np.sqrt(2) comes from the fact that we compute fisher of -2log(L) and not of log(L)
-    '''
-    '''
-    plt.plot((alpha_grid*u.rad).to(u.deg).value,
-             np.exp((chi2_grid-np.max(chi2_grid))/2), label='grid true values')
-    plt.plot((alpha_grid*u.rad).to(u.deg).value,
-             np.exp((chi2_grid_min-np.max(chi2_grid_min))/2), label='grid minimisation', linestyle='--')
-    # plt.plot((alpha_grid*u.rad).to(u.deg).value,
-    #          first_deriv_grid[:, 2]/np.max(first_deriv_grid[:, 2]))
-    plt.plot((alpha_grid*u.rad).to(u.deg).value, gaussianM /
-             np.max(gaussianM), linestyle=':', label='gaussian fisher')
-    plt.vlines((results_min.x[2]*u.rad).to(u.deg).value, 0, 1, colors='black', linestyles='--')
-    plt.legend()
-    plt.show()
-
-    # IPython.embed()
-    '''
-    stat, bias, var, Cl, Cl_cmb, Cl_residuals_matrix, ell, WA_cmb = get_residuals(
+    stat, bias, var, Cl, Cl_cmb, Cl_residuals_matrix, ell, WA_cmb, VA_cmb = get_residuals(
         model_results, fg_freq_maps, sigma_spectral, lmin, lmax, fsky, params,
         cmb_spectra=spectra_true, true_A_cmb=model_data.mix_effectiv[:, :2])
     print('residuals estimation time = ', time.time() - start_residuals)
-    IPython.embed()
-    np.save(save_path+'sigma_miscal_eval_pior2to4_'+prior_str+r_str, sigma_spectral)
-    np.save(save_path+'stat_residuals_eval_pior2to4_'+prior_str+r_str, stat)
-    np.save(save_path+'bias_residuals_eval_pior2to4_'+prior_str+r_str, bias)
-    np.save(save_path+'var_residuals_eval_pior2to4_'+prior_str+r_str, var)
-    np.save(save_path+'ell_pior2to4_'+prior_str+r_str, ell)
+    # IPython.embed()
+    # np.save(save_path+'sigma_miscal_eval_pior2to4_'+prior_str+r_str, sigma_spectral)
+    # np.save(save_path+'stat_residuals_eval_pior2to4_'+prior_str+r_str, stat)
+    # np.save(save_path+'bias_residuals_eval_pior2to4_'+prior_str+r_str, bias)
+    # np.save(save_path+'var_residuals_eval_pior2to4_'+prior_str+r_str, var)
+    # np.save(save_path+'ell_pior2to4_'+prior_str+r_str, ell)
 
     '''=================Init and cosmo likelihood estimation================'''
     Cl_fid = {}
@@ -997,28 +1023,31 @@ def main():
     Cl_noise_matrix[0, 0] = Cl_noise
     Cl_noise_matrix[1, 1] = Cl_noise
 
+    # Cl_residuals_matrix = copy.deepcopy(Cl_cmb)
     tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_spectral, Cl_residuals_matrix['YY'])
     Cl_data = Cl_residuals_matrix['yy'] + Cl_residuals_matrix['zy'] + \
         Cl_residuals_matrix['yz'] + tr_SigmaYY + Cl_noise_matrix
 
+    # Cl_data = Cl_residuals_matrix['yy'] + tr_SigmaYY + Cl_noise_matrix
+
     chi2cosmo_true = likelihood_exploration([r_true, beta_true.value], Cl_fid, Cl_data,
-                                            Cl_noise_matrix, tr_SigmaYY, ell, fsky)
+                                            Cl_noise_matrix, tr_SigmaYY, WA_cmb, VA_cmb, ell, fsky)
 
     cosmo_params = [0.03, 0.04]
     # IPython.embed()
     results_cosmp = minimize(likelihood_exploration, cosmo_params, args=(
         Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky),
-        bounds=((-0.01, 0.1), (-np.pi/4, np.pi/4)), tol=1e-18,
-        method='L-BFGS-B')  # , jac=jac_cosmo)
+        bounds=bounds_cosmo, tol=1e-18,
+        method=method_cosmo, jac=jac_cosmo_min)
     print('')
     print(results_cosmp)
     print('')
     print('delta chi2cosmo = ', results_cosmp.fun - chi2cosmo_true)
     print('results - true cosmo = ', results_cosmp.x - np.array([r_true, beta_true.value]))
     # IPython.embed()
-    grid_r = np.linspace(-0.01, 0.1, 100)
-    grid_beta = np.linspace(-0.78, 0.78, 100)
-    param_grid = [0, 0]
+    grid_r = np.linspace(-0.01, 0.02, 100)
+    grid_beta = np.linspace(-0.08, 0.08, 100)
+    param_grid = [r_true, beta_true.value]
     chi2r = []
     chi2_beta = []
     jac_r = []
@@ -1032,7 +1061,7 @@ def main():
     chi2r = np.array(chi2r)
     jac_r = np.array(jac_r)
 
-    param_grid = [0, 0]
+    param_grid = [r_true, beta_true.value]
     for b in grid_beta:
         param_grid[1] = b
         chi2_beta.append(likelihood_exploration(param_grid, Cl_fid, Cl_data,
@@ -1041,6 +1070,23 @@ def main():
                                   Cl_noise_matrix, tr_SigmaYY, ell, fsky))
     chi2_beta = np.array(chi2_beta)
     jac_beta = np.array(jac_beta)
+    plt.plot(grid_r, chi2r)
+    plt.vlines(r_true, min(chi2r), max(chi2r), colors='black')
+    plt.savefig('test_gridr_noYY')
+    plt.close()
+    plt.plot(grid_r, jac_r[:, 0])
+    plt.vlines(r_true, min(jac_r[:, 0]), max(jac_r[:, 0]), colors='black')
+    plt.savefig('test_jacr')
+    plt.close()
+
+    plt.plot(grid_beta, chi2_beta)
+    plt.vlines(beta_true.value, min(chi2_beta), max(chi2_beta), colors='black')
+    plt.savefig('test_gridbeta_noYY')
+    plt.close()
+    plt.plot(grid_beta, jac_beta[:, 1])
+    plt.vlines(beta_true.value, min(jac_beta[:, 1]), max(jac_beta[:, 1]), colors='black')
+    plt.savefig('test_jacbeta')
+    plt.close()
 
     '''==================Fisher cosmo likelihood estimation================='''
 

@@ -1,12 +1,12 @@
-from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+from matplotlib.colors import ListedColormap
 from matplotlib.cm import get_cmap
 import matplotlib.cm as cm
 import matplotlib.colors as mpcolors
-from cycler import cycler
-import matplotlib.animation as animation
+# from cycler import cycler
+# import matplotlib.animation as animation
 import copy
 import residuals as res
-import IPython
+# import IPython
 import numpy as np
 from astropy import units as u
 import matplotlib.pyplot as plt
@@ -15,7 +15,7 @@ from datetime import date
 import os
 import configparser
 import bjlib.lib_project as lib
-
+from json import loads
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--folder', type=str)
@@ -42,9 +42,16 @@ lmin = int(config['DEFAULT']['lmin'])
 lmax = int(config['DEFAULT']['lmax'])
 prior_start = float(config['DEFAULT']['prior_start'])
 prior_end = float(config['DEFAULT']['prior_end'])
+INSTRU = config['DEFAULT']['INSTRU']
+true_miscal_angles = loads(config.get(
+    'DEFAULT', 'true_miscal_angles').replace('  ', ',').replace('\n', ','))
 
-
-frequencies = np.array([27,  39,  93, 145, 225, 280])
+if INSTRU == 'SAT':
+    frequencies = np.array([27,  39,  93, 145, 225, 280])
+elif INSTRU == 'Planck':
+    from fgbuster.observation_helpers import get_instrument
+    frequencies = get_instrument('planck_P')['frequencies']
+freq_number = len(frequencies)
 
 fisher_cosmo = np.load(save_path+'fisher_matrix_grid.npy')
 fisher_spectral = np.load(save_path+'fisher_spectral_grid.npy')
@@ -83,13 +90,16 @@ plt.savefig(save_path+'sigma_beta_wrt_prior', bbox_inches='tight')
 plt.close()
 
 
-for i in range(6):
+for i in range(freq_number):
     plt.errorbar(grid_prior, (spectral[:, i]*u.rad).to(u.deg).value,
                  yerr=(error_spectral[:, i, i]*u.rad).to(u.deg).value, fmt='o')
+    plt.hlines((true_miscal_angles[i]*u.rad).to(u.deg).value, 0,
+               grid_prior[-1], colors='black', linestyles='--', label='True miscal angles = {:.2}'.format((true_miscal_angles[i]*u.rad).to(u.deg)))
     plt.xlabel('prior precision in deg')
-    plt.ylabel('miscal angle at {}Ghz in deg'.format(frequencies[i]))
+    plt.ylabel('miscal angle at {}Ghz in deg'.format(int(frequencies[i])))
+    plt.legend()
     plt.savefig(
-        save_path+'miscal{}GHz_wrt_prior'.format(frequencies[i]), bbox_inches='tight')
+        save_path+'miscal{}GHz_wrt_prior'.format(int(frequencies[i])), bbox_inches='tight')
     plt.close()
 
 plt.errorbar(grid_prior, spectral[:, -2],

@@ -81,31 +81,68 @@ def get_chi_squared_local(angle_array, ddtPN, model_skm, prior=False,
 def data_and_model_quick(miscal_angles_array, frequencies_by_instrument_array, bir_angle=0*u.rad,
                          nside=512, spectral_params=[1.59, 20, -3], sky_model='c1s0d0',
                          sensitiviy_mode=2, one_over_f_mode=2, instrument='SAT'):
-
+    start_datainit = time.time()
     data = lSO.sky_map(bir_angle=bir_angle, miscal_angles=miscal_angles_array,
                        frequencies_by_instrument=frequencies_by_instrument_array,
                        nside=nside, sky_model=sky_model, instrument=instrument)
+    print('time data init = ', time.time() - start_datainit)
+
+    start_modelinit = time.time()
     model = lSO.sky_map(bir_angle=bir_angle, miscal_angles=miscal_angles_array,
                         frequencies_by_instrument=frequencies_by_instrument_array,
                         nside=nside, sky_model=sky_model, instrument=instrument)
-
+    print('time model init = ', time.time() - start_modelinit)
     # v3f = V3.so_V3_SA_bands()
     # index = np.in1d(v3f, frequencies_array).nonzero()[0]
+    if instrument == 'Planck' and sky_model == 'c1s0d0' and nside == 2048:
+        start_import = time.time()
+        print('PLANCK MAP IMPORT')
+        data.get_frequency()
+        data.cmb_freq_maps = np.load('data/pysm_cmbsky_c1_2048.npy')
+        data.dust_freq_maps = np.load('data/pysm_dustsky_d0_2048.npy')
+        data.sync_freq_maps = np.load('data/pysm_synchsky_s0_2048.npy')
+        print('time import = ', time.time() - start_import)
 
-    data.get_pysm_sky()
-    # data.frequencies = frequencies_array
-    data.get_frequency()
+    else:
+        start_pysm = time.time()
+        data.get_pysm_sky()
+        print('time pysm = ', time.time() - start_pysm)
 
-    data.get_freq_maps()
+        # data.frequencies = frequencies_array
+        start_freq = time.time()
+        data.get_frequency()
+        print('time freq = ', time.time() - start_freq)
+
+        start_freq_maps = time.time()
+        data.get_freq_maps()
+        print('time freqmaps = ', time.time() - start_freq_maps)
+
+    start_rot = time.time()
     data.cmb_rotation()
-    data.get_signal()
-    data.get_A_ev(fix_temp=True)
-    data.evaluate_mixing_matrix(spectral_params)
+    print('time rot = ', time.time() - start_rot)
 
+    start_signal = time.time()
+    data.get_signal()
+    print('time signal = ', time.time() - start_signal)
+
+    start_Aev = time.time()
+    data.get_A_ev(fix_temp=True)
+    print('time Aev = ', time.time() - start_Aev)
+
+    start_mix = time.time()
+    data.evaluate_mixing_matrix(spectral_params)
+    print('time mix = ', time.time() - start_mix)
+
+    start_miscal = time.time()
     data.get_miscalibration_angle_matrix()
+    print('time miscal = ', time.time() - start_miscal)
+
+    start_data = time.time()
     data.get_data()
+    print('time data_pix = ', time.time() - start_data)
 
     # model.frequencies = frequencies_array
+    start_modeltotal = time.time()
     model.get_frequency()
 
     model.get_bir_matrix()
@@ -119,6 +156,7 @@ def data_and_model_quick(miscal_angles_array, frequencies_by_instrument_array, b
     # model.noise_covariance = model.noise_covariance[index[0]*2:index[-1]*2 + 2,
     #                                                 index[0]*2:index[-1]*2 + 2]
     model.get_projection_op()
+    print('time model total =', time.time() - start_modeltotal)
 
     return data, model
 

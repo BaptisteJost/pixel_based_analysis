@@ -15,12 +15,14 @@ from mpi4py import MPI
 from datetime import date
 import os
 import configparser
+import tracemalloc
 
 
 def parameters2file(path, nside, lmax, lmin, fsky, sky_model, sensitiviy_mode,
                     one_over_f_mode, A_lens_true, r_true, beta_true,
                     true_miscal_angles, prior, prior_indices, nsim, prior_start,
-                    prior_end, initmodel_miscal, angle_array_start, cosmo_params, path_BB, INSTRU):
+                    prior_end, initmodel_miscal, angle_array_start, cosmo_params, path_BB,
+                    INSTRU, method_spectral, method_cosmo, bounds_cosmo, jac_cosmo, jac_spectal, comment):
     config = configparser.ConfigParser()
     config['DEFAULT'] = {}
     config['DEFAULT']['INSTRU'] = INSTRU
@@ -53,6 +55,12 @@ def parameters2file(path, nside, lmax, lmin, fsky, sky_model, sensitiviy_mode,
     # Initial values of parameter vectors before initialisation
     config['DEFAULT']['angle_array_start'] = str(angle_array_start)
     config['DEFAULT']['cosmo_params'] = str(cosmo_params)
+    config['DEFAULT']['method_spectral'] = method_spectral
+    config['DEFAULT']['method_cosmo'] = method_cosmo
+    config['DEFAULT']['bounds_cosmo'] = str(bounds_cosmo)
+    config['DEFAULT']['jac_cosmo'] = str(jac_cosmo)
+    config['DEFAULT']['jac_spectal'] = str(jac_spectal)
+    config['DEFAULT']['comment'] = str(comment)
 
     with open(path+'example.ini', 'w+') as configfile:
         config.write(configfile)
@@ -66,6 +74,9 @@ def main():
     size_mpi = comm.Get_size()
     print(mpi_rank, size_mpi)
     root = 0
+
+    tracemalloc.start()
+    start_init = time.time()
 
     NERSC = 1
     path_BB_local = '/home/baptiste/BBPipe'
@@ -93,7 +104,7 @@ def main():
         else:
             os.mkdir(save_path)
 
-    INSTRU = 'SAT'
+    INSTRU = 'Planck'
     if INSTRU == 'SAT':
         freq_number = 6
         fsky = 0.1
@@ -124,8 +135,8 @@ def main():
     r_true = 0.01
     beta_true = (0.35 * u.deg).to(u.rad)
 
-    true_miscal_angles = np.array([0]*freq_number)*u.rad
-    # true_miscal_angles = np.arange(0.1, 0.5, 0.4/6)*u.rad
+    # true_miscal_angles = np.array([0]*freq_number)*u.rad
+    true_miscal_angles = (np.arange(0.1, 0.5, 0.4 / freq_number)*u.deg).to(u.rad)
     prior = True
     prior_indices = []
     if prior:
@@ -149,25 +160,50 @@ def main():
     params.append('spectral')
 
     miscal_bounds = ((-np.pi/4, np.pi/4),)*freq_number
+    # miscal_bounds = ((None, None),)*freq_number
     spectral_bounds = ((0.5, 2.5), (-5, -1))
+    # spectral_bounds = ((None, None), (None, None))
     bounds = miscal_bounds + spectral_bounds
 
-    cosmo_params = [0.0, 0.0]
+    cosmo_params = [0.03, 0.04]
+    bounds_cosmo = ((-0.01, 0.1), (-np.pi/4, np.pi/4))
+    # bounds_cosmo = ((-0.01, 0.1), (None, None))
+    # bounds_cosmo = ((None, None), (None, None))
+    method_spectral = 'SLSQP'
+    method_cosmo = 'L-BFGS-B'
+    # jac_cosmo = None
+    jac_spectal = fshp.spectral_first_deriv
+    # jac_spectal = None
+    jac_cosmo = res.jac_cosmo
+
+    comment = 'profiling residuals'
+    # IPython.embed()
+
+    current, peak = tracemalloc.get_traced_memory()
+    print('time_init = ', time.time() - start_init)
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 
     if comm.rank == root:
         parameters2file(save_path, nside, lmax, lmin, fsky, sky_model, sensitiviy_mode,
                         one_over_f_mode, A_lens_true, r_true, beta_true,
                         true_miscal_angles, prior, prior_indices, nsim, prior_start,
-                        prior_end, initmodel_miscal, angle_array_start, cosmo_params, path_BB, INSTRU)
+                        prior_end, initmodel_miscal, angle_array_start, cosmo_params,
+                        path_BB, INSTRU, method_spectral, method_cosmo, bounds_cosmo, jac_cosmo, jac_spectal, comment)
 
     '''====================================================================='''
 
+    start_data = time.time()
     data, model_data = pix.data_and_model_quick(
         miscal_angles_array=true_miscal_angles, bir_angle=beta_true,
         frequencies_by_instrument_array=freq_by_instru, nside=nside,
         sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
         one_over_f_mode=one_over_f_mode, instrument=INSTRU)
 
+    current, peak = tracemalloc.get_traced_memory()
+    print('time data = ', time.time() - start_data)
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+
+    start_model = time.time()
     model = pix.get_model(
         miscal_angles_array=initmodel_miscal, bir_angle=beta_true,
         frequencies_by_instrument_array=freq_by_instru,
@@ -175,9 +211,13 @@ def main():
         sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
         one_over_f_mode=one_over_f_mode, instrument=INSTRU)
 
-    '''===========================getting data==========================='''
+    current, peak = tracemalloc.get_traced_memory()
+    print('time model = ', time.time() - start_model)
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 
-    S_cmb_name = 'S_cmb_n{}_s{}_r{:1}_b{:1.1e}'.format(nside, nsim, r_true, beta_true.value).replace(
+    '''===========================getting data==========================='''
+    start_freqmaps = time.time()
+    S_cmb_name = 'data/S_cmb_n{}_s{}_r{:1}_b{:1.1e}'.format(nside, nsim, r_true, beta_true.value).replace(
         '.', 'p') + '.npy'
     # print(S_cmb_name)
     S_cmb = np.load(S_cmb_name)
@@ -186,23 +226,48 @@ def main():
 
     fg_freq_maps_full = data.miscal_matrix.dot(data.mixing_matrix)[
         :, 2:].dot(data.signal[2:])
-    ddt_fg = np.einsum('ik...,...kj->ijk', fg_freq_maps_full, fg_freq_maps_full.T)
+    del data.signal
 
+    current, peak = tracemalloc.get_traced_memory()
+    print('time_freqmaps = ', time.time() - start_freqmaps)
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+
+    start_mask = time.time()
     data.get_mask(path_BB)
     mask = data.mask
     mask[(mask != 0) * (mask != 1)] = 0
 
-    ddt_fg *= mask
+    # ddt_fg *= mask
     fg_freq_maps = fg_freq_maps_full*mask
     del fg_freq_maps_full
 
     n_obspix = np.sum(mask == 1)
     del mask
-    F = np.sum(ddt_fg, axis=-1)/n_obspix
-    data_model = n_obspix*(F + ASAt + model.noise_covariance)
 
-    prior_precision_grid = np.linspace(prior_start, prior_end, size_mpi*2)
-    prior_per_rank = 2
+    current, peak = tracemalloc.get_traced_memory()
+    print('time_mask = ', time.time() - start_mask)
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+
+    start_F = time.time()
+    shape_ddt = (fg_freq_maps.shape[0], fg_freq_maps.shape[0])
+    F = np.empty(shape_ddt)
+    for f1 in range(fg_freq_maps.shape[0]):
+        for f2 in range(f1, fg_freq_maps.shape[0]):
+            F[f1, f2] = np.einsum('i,i->', fg_freq_maps[f1], fg_freq_maps[f2])
+            F[f2, f1] = F[f1, f2]
+    F /= n_obspix
+
+    current, peak = tracemalloc.get_traced_memory()
+    print('time_F = ', time.time() - start_F)
+    print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+
+    data_model = n_obspix*(F + ASAt + model.noise_covariance)
+    true_A_cmb = copy.deepcopy(model_data.mix_effectiv[:, :2])
+
+    # print('diff F =', np.max(np.abs(F2-F)))
+
+    prior_per_rank = 1
+    prior_precision_grid = np.linspace(prior_start, prior_end, size_mpi*prior_per_rank)
 
     fisher_cosmo_matrix_list = []
     fisher_spectral_list = []
@@ -213,6 +278,7 @@ def main():
     spectral_results = []
 
     for prior_precision_deg in prior_precision_grid[prior_per_rank*mpi_rank:prior_per_rank*mpi_rank+prior_per_rank]:
+        start_init_min = time.time()
         prior_precision = (prior_precision_deg * u.deg).to(u.rad).value
         print('prior_precision', prior_precision)
         angle_prior = []
@@ -221,19 +287,29 @@ def main():
                 angle_prior.append([true_miscal_angles.value[d], prior_precision, int(d)])
             angle_prior = np.array(angle_prior[prior_indices[0]: prior_indices[-1]])
 
-        # params = ['miscal']*6
-        # params.append('spectral')
-        # params.append('spectral')
+        # angle_array_start[angle_prior[:, 2].astype(int)] = np.random.normal(
+        #     angle_prior[:, 0], angle_prior[:, 1])
+
+        current, peak = tracemalloc.get_traced_memory()
+        print('time_init_min = ', time.time() - start_init_min)
+        print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+
+        start_min_spectra = time.time()
 
         results_min = minimize(get_chi_squared_local, angle_array_start, args=(
             data_model, model, prior, [], angle_prior, False, True, 1, True, params),
-            tol=1e-18, options={'maxiter': 1000}, jac=fshp.spectral_first_deriv, method='SLSQP',
-            bounds=bounds)
+            tol=1e-18, options={'maxiter': 1000}, method=method_spectral,
+            bounds=bounds, jac=jac_spectal)
+
+        current, peak = tracemalloc.get_traced_memory()
+        print('time_min_spectra = ', time.time() - start_min_spectra)
+        print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 
         print('')
         print(results_min)
         print('')
 
+        start_model_result = time.time()
         model_results = pix.get_model(
             results_min.x[: freq_number], bir_angle=beta_true,
             frequencies_by_instrument_array=freq_by_instru, nside=nside,
@@ -241,10 +317,15 @@ def main():
             sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
             one_over_f_mode=one_over_f_mode, instrument=INSTRU)
 
+        current, peak = tracemalloc.get_traced_memory()
+        print('time_model_result = ', time.time() - start_model_result)
+        print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+
         print('results - spectral_true = ', results_min.x[:freq_number] - true_miscal_angles.value)
         print('results - spectral_true = ', results_min.x[-2] - 1.59)
         print('results - spectral_true = ', results_min.x[-1] + 3)
 
+        start_init_res = time.time()
         prior_matrix = np.zeros([len(params), len(params)])
         if prior:
             for i in range(prior_indices[0], prior_indices[-1]):
@@ -260,11 +341,33 @@ def main():
         fisher_matrix_prior_spectral = fisher_matrix_spectral + prior_matrix
         sigma_spectral = np.linalg.inv(fisher_matrix_prior_spectral)
 
-        stat, bias, var, Cl, Cl_cmb, Cl_residuals_matrix, ell, WA_cmb = res.get_residuals(
+        current, peak = tracemalloc.get_traced_memory()
+        print('time_init_res = ', time.time() - start_init_res)
+        print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+
+        start_res = time.time()
+        stat, bias, var, Cl, Cl_cmb, Cl_residuals_matrix, ell, W_cmb, ddW_cmb = res.get_residuals(
             model_results, fg_freq_maps, sigma_spectral, lmin, lmax, fsky, params,
-            cmb_spectra=spectra_true, true_A_cmb=model_data.mix_effectiv[:, :2])
+            cmb_spectra=spectra_true, true_A_cmb=true_A_cmb)
+
+        current, peak = tracemalloc.get_traced_memory()
+        print('time_res = ', time.time() - start_res)
+        print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+        WA_cmb = W_cmb.dot(model_results.mix_effectiv[:, :2])
+
+        W_dBdB_cmb = ddW_cmb.dot(model_results.mix_effectiv[:, :2])
+        VA_cmb = np.einsum('ij,ij...->...', sigma_spectral, W_dBdB_cmb[:, :])
+
+        print('')
+        print('W = ', W_cmb)
+        print('A_cmb = ', model_results.mix_effectiv[:, :2])
+        print('WA = ', WA_cmb)
+        print('')
+        print('VA_cmb = ', VA_cmb)
+        print('')
 
         '''=================Init and cosmo likelihood estimation================'''
+        start_init_cosmo = time.time()
         Cl_fid = {}
         Cl_fid['BB'] = res.get_Cl_cmbBB(Alens=A_lens_true, r=r_true,
                                         path_BB=path_BB)[2][lmin:lmax+1]
@@ -273,7 +376,9 @@ def main():
         Cl_fid['EE'] = ps_planck[1, lmin:lmax+1]
 
         Cl_noise, ell_noise = res.get_noise_Cl(
-            model_results.mix_effectiv, lmax+1, fsky, sensitiviy_mode, one_over_f_mode)
+            model_results.mix_effectiv, lmax+1, fsky,
+            sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode,
+            instrument=INSTRU)
         Cl_noise = Cl_noise[lmin-2:]
         ell_noise = ell_noise[lmin-2:]
         Cl_noise_matrix = np.zeros([2, 2, Cl_noise.shape[0]])
@@ -284,19 +389,38 @@ def main():
         Cl_data = Cl_residuals_matrix['yy'] + Cl_residuals_matrix['zy'] + \
             Cl_residuals_matrix['yz'] + tr_SigmaYY + Cl_noise_matrix
 
-        results_cosmp = minimize(res.likelihood_exploration, cosmo_params, args=(
-            Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky),
-            bounds=((-0.01, 0.1), (-np.pi/4, np.pi/4)), tol=1e-18,
-            method='L-BFGS-B')  # , jac=res.jac_cosmo)
+        current, peak = tracemalloc.get_traced_memory()
+        print('time_init_cosmo = ', time.time() - start_init_cosmo)
+        print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 
+        # Cl_data = Cl_residuals_matrix['yy'] + tr_SigmaYY + Cl_noise_matrix
+
+        start_min_cosmo = time.time()
+        results_cosmp = minimize(res.likelihood_exploration, cosmo_params, args=(
+            Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, WA_cmb, VA_cmb, ell, fsky),
+            tol=1e-18, bounds=bounds_cosmo,
+            method=method_cosmo, jac=jac_cosmo)
+
+        current, peak = tracemalloc.get_traced_memory()
+        print('time_min_cosmo = ', time.time() - start_min_cosmo)
+        print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+
+        #bounds=((-0.01, 0.1), (-np.pi/4, np.pi/4)),
         print('')
         print('results - true cosmo = ', results_cosmp.x - np.array([r_true, beta_true.value]))
         print('')
         print(results_cosmp)
         print('')
+        start_chi2 = time.time()
+        chi2cosmo_true = res.likelihood_exploration([r_true, beta_true.value], Cl_fid, Cl_data,
+                                                    Cl_noise_matrix, tr_SigmaYY, WA_cmb, VA_cmb, ell, fsky)
+        print('time chi2 = ', time.time() - start_chi2)
+        print('chi2cosmo true = ', chi2cosmo_true)
+        print('delta chi2cosmo = ', results_cosmp.fun - chi2cosmo_true)
+        print('delta chi2cosmo relativ = ', (results_cosmp.fun - chi2cosmo_true)/chi2cosmo_true)
 
         '''==================Fisher cosmo likelihood estimation================='''
-
+        start_fisher = time.time()
         Cl_cmb_model_fish = np.zeros([4, Cl_fid['EE'].shape[0]])
         Cl_cmb_model_fish[1] = copy.deepcopy(Cl_fid['EE'])
         Cl_cmb_model_fish[2] = copy.deepcopy(Cl_fid['BlBl'])*A_lens_true + \
@@ -324,6 +448,10 @@ def main():
         fisher_cosmo_matrix_list.append(fisher_cosmo_matrix)
         results_cosmp_list.append(results_cosmp.x)
 
+        current, peak = tracemalloc.get_traced_memory()
+        print('time_fisher = ', time.time() - start_fisher)
+        print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+
         control_grid.append(prior_precision_deg)
         cosmo_results.append(results_cosmp.x)
         spectral_results.append(results_min.x)
@@ -345,10 +473,10 @@ def main():
     spectral_results_mpi = None
     if comm.rank == 0:
         fisher_cosmo_matrix_mpi = np.empty([size_mpi, prior_per_rank, 2, 2])
-        fisher_spectal_mpi = np.empty([size_mpi, prior_per_rank, 8, 8])
+        fisher_spectal_mpi = np.empty([size_mpi, prior_per_rank,  freq_number+2, freq_number+2])
         prior_precision_grid_control = np.empty([size_mpi, prior_per_rank])
         cosmo_results_mpi = np.empty([size_mpi, prior_per_rank, 2])
-        spectral_results_mpi = np.empty([size_mpi, prior_per_rank, 8])
+        spectral_results_mpi = np.empty([size_mpi, prior_per_rank, freq_number+2])
 
     comm.Gather(fisher_cosmo_matrix_array, fisher_cosmo_matrix_mpi, root)
     comm.Gather(fisher_spectral_array, fisher_spectal_mpi, root)

@@ -26,9 +26,9 @@ def main():
     print(mpi_rank, size_mpi)
     root = 0
 
-    nside = 2024
+    nside = 2048
     nsim_cmb = 1000
-    r = 0.01
+    r = 0.0
     bire_angle = (0.35*u.deg).to(u.rad)
     A_lens = 1
     path_BB_local = '/home/baptiste/BBPipe'
@@ -62,10 +62,13 @@ def main():
         S_cmb = np.sum(S_sim_mpi, axis=0)/((nsim_cmb//size_mpi)*size_mpi)/hp.nside2npix(nside)
         print('time=', time.time()-start)
 
-        S_cmb_name = 'mpitestS_cmb_n{}_s{}_r{:1}_b{:1.1e}'.format(nside, nsim_cmb, r, bire_angle.value).replace(
+        S_cmb_name = 'data/S_cmb_n{}_s{}_r{:1}_b{:1.1e}'.format(nside, nsim_cmb, r, bire_angle.value).replace(
+            '.', 'p') + '.npy'
+        S_cmb_mpi_name = 'data/S_cmb_mpi_n{}_s{}_r{:1}_b{:1.1e}'.format(nside, nsim_cmb, r, bire_angle.value).replace(
             '.', 'p') + '.npy'
 
         np.save(S_cmb_name, S_cmb)
+        np.save(S_cmb_mpi_name, S_sim_mpi)
     exit()
 # IPython.embed()
 # cl_list_average = np.mean(cl_list, axis=0)
