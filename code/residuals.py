@@ -550,7 +550,6 @@ def likelihood_exploration(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_Si
     WACAW = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
     WACAV = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, VA_cmb.T)
     VACAW = np.einsum('ij,jkl,km->iml', VA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
-    print(np.max(np.abs((WACAV-VACAW)/WACAV)))
     # IPython.embed()
     # Cl_model_total = Cl_cmb_rot_matrix + Cl_noise_matrix + tr_SigmaYY
     Cl_model_total = WACAW + Cl_noise_matrix + tr_SigmaYY + VACAW + WACAV
@@ -806,8 +805,8 @@ def main():
     nside = 512
 
     sky_model = 'c1s0d0'
-    sensitiviy_mode = 0
-    one_over_f_mode = 0
+    sensitiviy_mode = 1
+    one_over_f_mode = 1
     A_lens_true = 1
     # sensitivity_mode
     #     0: threshold,
@@ -824,7 +823,8 @@ def main():
     # beta_true = (0.0*u.deg).to(u.rad)
 
     # true_miscal_angles = np.array([0]*freq_number)*u.rad
-    true_miscal_angles = np.arange(0.1, 0.5, 0.4/6)*u.rad
+    # true_miscal_angles = (np.arange(0.1, 0.5, 0.4 / freq_number)*u.deg).to(u.rad)[::-1]
+    true_miscal_angles = (np.array([0.28] * freq_number)*u.deg).to(u.rad)
     # true_miscal_angles = np.array([0]*6)*u.rad
     # true_miscal_angles[0] = 0.4333*u.rad
 
@@ -832,14 +832,14 @@ def main():
     prior_indices = []
     if prior:
         prior_indices = [2, 3]
-    prior_precision = (1 * u.deg).to(u.rad).value
+    prior_precision = (0.1 * u.deg).to(u.rad).value
     prior_str = '{:1.1e}rad'.format(prior_precision)
 
     save_path = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/test/'
 
     path_BB_local = '/home/baptiste/BBPipe'
     path_BB_NERSC = '/global/homes/j/jost/BBPipe'
-    path_BB = path_BB_NERSC
+    path_BB = path_BB_local
 
     nsim = 1000
 
@@ -943,7 +943,7 @@ def main():
         tol=1e-18, options={'maxiter': 1000}, jac=fshp.spectral_first_deriv, method='L-BFGS-B',
         bounds=bounds)
     print(results_min)
-    # results_min.x[:freq_number] = 0
+    results_min.x[:freq_number] = 0
     # results_min.x[-2] = 1.59
     # results_min.x[-1] = -3
     chi2_min = get_chi_squared_local(results_min.x, data_model, model,
@@ -997,10 +997,14 @@ def main():
 
     start_residuals = time.time()
 
-    stat, bias, var, Cl, Cl_cmb, Cl_residuals_matrix, ell, WA_cmb, VA_cmb = get_residuals(
+    stat, bias, var, Cl, Cl_cmb, Cl_residuals_matrix, ell, W_cmb, ddW_cmb = get_residuals(
         model_results, fg_freq_maps, sigma_spectral, lmin, lmax, fsky, params,
         cmb_spectra=spectra_true, true_A_cmb=model_data.mix_effectiv[:, :2])
     print('residuals estimation time = ', time.time() - start_residuals)
+    WA_cmb = W_cmb.dot(model_results.mix_effectiv[:, :2])
+
+    W_dBdB_cmb = ddW_cmb.dot(model_results.mix_effectiv[:, :2])
+    VA_cmb = np.einsum('ij,ij...->...', sigma_spectral, W_dBdB_cmb[:, :])
     # IPython.embed()
     # np.save(save_path+'sigma_miscal_eval_pior2to4_'+prior_str+r_str, sigma_spectral)
     # np.save(save_path+'stat_residuals_eval_pior2to4_'+prior_str+r_str, stat)
@@ -1036,7 +1040,7 @@ def main():
     cosmo_params = [0.03, 0.04]
     # IPython.embed()
     results_cosmp = minimize(likelihood_exploration, cosmo_params, args=(
-        Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, ell, fsky),
+        Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, WA_cmb, VA_cmb, ell, fsky),
         bounds=bounds_cosmo, tol=1e-18,
         method=method_cosmo, jac=jac_cosmo_min)
     print('')
@@ -1044,7 +1048,23 @@ def main():
     print('')
     print('delta chi2cosmo = ', results_cosmp.fun - chi2cosmo_true)
     print('results - true cosmo = ', results_cosmp.x - np.array([r_true, beta_true.value]))
-    # IPython.embed()
+    IPython.embed()
+
+    r_range = np.linspace(0, 0.02, 100)
+    # beta_range = np.linspace(0.0017, 0.009, 100)
+    beta_range = np.linspace(0.005, 0.014, 100)
+
+    like_grid = np.empty((len(r_range), len(beta_range)))
+    r, b = np.meshgrid(r_range, beta_range)
+    for i in range(len(r_range)):
+        for j in range(len(beta_range)):
+            like_grid[i, j] = likelihood_exploration(
+                [r_range[i], beta_range[j]], Cl_fid, Cl_data, Cl_noise_matrix,
+                tr_SigmaYY, WA_cmb, VA_cmb, ell, fsky)
+    np.save('../results_and_data/potatoe/'+'chi2_miscal_flat.npy', like_grid)
+    np.save('../results_and_data/potatoe/'+'r_range_miscal_flat.npy', r)
+    np.save('../results_and_data/potatoe/'+'beta_range_miscal_flat.npy', b)
+
     grid_r = np.linspace(-0.01, 0.02, 100)
     grid_beta = np.linspace(-0.08, 0.08, 100)
     param_grid = [r_true, beta_true.value]
