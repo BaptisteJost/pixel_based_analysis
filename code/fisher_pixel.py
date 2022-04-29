@@ -453,13 +453,17 @@ def spectral_first_deriv(angle_array, ddt, model, prior=False,
                          minimize=False, params=None):
     from residuals import get_diff_list
     # IPython.embed()
-    model.evaluate_mixing_matrix([angle_array[-2], 20, angle_array[-1]])
+    if spectral_index:
+        model.evaluate_mixing_matrix([angle_array[-2], 20, angle_array[-1]])
+    else:
+        model.mixing_matrix = np.array([[1, 0], [0, 1]]*len(model.frequencies))
     model.miscal_angles = angle_array[:model.miscal_angles.shape[0]]
     model.bir_angle = 0
 
     model.get_miscalibration_angle_matrix()
     model.get_bir_matrix()
-
+    if not spectral_index:
+        model.bir_matrix = model.bir_matrix[:2, :2]
     model.get_projection_op()
     diff_list = get_diff_list(model, params)
 
@@ -474,12 +478,13 @@ def spectral_first_deriv(angle_array, ddt, model, prior=False,
         term = Nm1A_invAtNm1A.dot(AitP)
         deriv = np.sum(np.trace(term.dot(ddt)))
 
-        gaussian_prior_deriv = 0
-        if np.any(miscal_priors[:, 2] == i):
-            j = np.where(miscal_priors[:, 2] == i)[0][0]
-            gaussian_prior_deriv += (angle_array[int(miscal_priors[j, 2])] -
-                                     miscal_priors[j, 0]) / (miscal_priors[j, 1]**2)
-        deriv_vector[i] = deriv - gaussian_prior_deriv
+        if prior:
+            gaussian_prior_deriv = 0
+            if np.any(miscal_priors[:, 2] == i):
+                j = np.where(miscal_priors[:, 2] == i)[0][0]
+                gaussian_prior_deriv += (angle_array[int(miscal_priors[j, 2])] -
+                                         miscal_priors[j, 0]) / (miscal_priors[j, 1]**2)
+            deriv_vector[i] = deriv - gaussian_prior_deriv
     if minimize:
         return -deriv_vector
     else:

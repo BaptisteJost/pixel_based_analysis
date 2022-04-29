@@ -52,7 +52,8 @@ def get_chi_squared_local(angle_array, ddtPN, model_skm, prior=False,
 
     model_skm.get_miscalibration_angle_matrix()
     model_skm.get_bir_matrix()
-
+    if not spectral_index:
+        model_skm.bir_matrix = model_skm.bir_matrix[:2, :2]
     model_skm.get_projection_op()
 
     # chi_squared = np.einsum('ij,jip->...', (-model_skm.projection+model_skm.inv_noise),
@@ -66,7 +67,7 @@ def get_chi_squared_local(angle_array, ddtPN, model_skm, prior=False,
             # gaussian_prior += (1/(2*(miscal_priors[l, 1]**2))
             #                    * (angle_array[int(miscal_priors[l, 2])] - miscal_priors[l, 0])**2)
             gaussian_prior += ((angle_array[int(miscal_priors[l, 2])] -
-                                miscal_priors[l, 0])**2) / (2*(miscal_priors[l, 1]**2)) + 2*np.log(2*miscal_priors[l, 1]*np.sqrt(2*np.pi))
+                                miscal_priors[l, 0])**2) / (2*(miscal_priors[l, 1]**2))  # + 2*np.log(2*miscal_priors[l, 1]*np.sqrt(2*np.pi))
 
         if minimize:
             return -chi_squared + gaussian_prior
@@ -78,9 +79,50 @@ def get_chi_squared_local(angle_array, ddtPN, model_skm, prior=False,
         return chi_squared
 
 
+def constrained_chi2(angle_array, ddtPN, model_skm, pivot_angle_index, pivot_angle_value,
+                     minimize=False, params=None, prior=None):
+    angle_index = - 2
+
+    if not 0.5 <= angle_array[-2] < 2.5 or not -5 <= angle_array[-1] <= -1:
+        print('bla')
+        if not minimize:
+            return -np.inf
+
+    model_skm.evaluate_mixing_matrix([angle_array[-2], 20, angle_array[-1]])
+
+    if np.any(np.array(angle_array[:angle_index]) < (-0.5*np.pi)) or np.any(np.array(angle_array[:angle_index]) > (0.5*np.pi)):
+        print('blou')
+        if not minimize:
+            return -np.inf
+
+    model_skm.miscal_angles = np.insert(
+        angle_array[:angle_index], pivot_angle_index, pivot_angle_value)
+    # model_skm.miscal_angles = angle_array[:angle_index]
+    # print('params = ', np.insert(angle_array, pivot_angle_index, pivot_angle_value))
+    model_skm.bir_angle = 0
+
+    model_skm.get_miscalibration_angle_matrix()
+    model_skm.get_bir_matrix()
+
+    model_skm.get_projection_op()
+
+    chi_squared = np.einsum('ij,ji->...', -model_skm.projection+model_skm.inv_noise,
+                            ddtPN)
+    if prior is not None:
+        gaussian_prior = 0
+        for l in range(len(angle_array)-2):
+            gaussian_prior += ((angle_array[l] -
+                                prior[l, 0])**2) / (2*(prior[l, 1]**2))
+        chi_squared -= gaussian_prior
+    if minimize:
+        return -chi_squared
+    else:
+        return chi_squared
+
+
 def data_and_model_quick(miscal_angles_array, frequencies_by_instrument_array, bir_angle=0*u.rad,
-                         nside=512, spectral_params=[1.59, 20, -3], sky_model='c1s0d0',
-                         sensitiviy_mode=2, one_over_f_mode=2, instrument='SAT'):
+                         nside=512, spectral_params=[1.54, 20, -3], sky_model='c1s0d0',
+                         sensitiviy_mode=2, one_over_f_mode=2, instrument='SAT', overwrite_freq=None):
     start_datainit = time.time()
     data = lSO.sky_map(bir_angle=bir_angle, miscal_angles=miscal_angles_array,
                        frequencies_by_instrument=frequencies_by_instrument_array,
@@ -110,7 +152,11 @@ def data_and_model_quick(miscal_angles_array, frequencies_by_instrument_array, b
 
         # data.frequencies = frequencies_array
         start_freq = time.time()
-        data.get_frequency()
+        if overwrite_freq is not None:
+            print('WARNING use of overwrite_freq is not advised')
+            data.frequencies = overwrite_freq
+        else:
+            data.get_frequency()
         print('time freq = ', time.time() - start_freq)
 
         start_freq_maps = time.time()
@@ -143,7 +189,10 @@ def data_and_model_quick(miscal_angles_array, frequencies_by_instrument_array, b
 
     # model.frequencies = frequencies_array
     start_modeltotal = time.time()
-    model.get_frequency()
+    if overwrite_freq is not None:
+        model.frequencies = overwrite_freq
+    else:
+        model.get_frequency()
 
     model.get_bir_matrix()
     model.get_A_ev(fix_temp=True)
@@ -151,6 +200,11 @@ def data_and_model_quick(miscal_angles_array, frequencies_by_instrument_array, b
 
     model.get_miscalibration_angle_matrix()
     model.get_noise(sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
+    if overwrite_freq is not None:
+        ind = np.where(V3.so_V3_SA_bands() == overwrite_freq)[0][0]
+        model.noise_covariance = model.noise_covariance[2*ind:2*ind+2, 2*ind:2*ind+2]
+        model.inv_noise = model.inv_noise[2*ind:2*ind+2, 2*ind:2*ind+2]
+
     # model.inv_noise = model.inv_noise[index[0]*2:index[-1]*2 + 2,
     #                                   index[0]*2:index[-1]*2 + 2]
     # model.noise_covariance = model.noise_covariance[index[0]*2:index[-1]*2 + 2,
@@ -162,21 +216,28 @@ def data_and_model_quick(miscal_angles_array, frequencies_by_instrument_array, b
 
 
 def get_model(miscal_angles_array, frequencies_by_instrument_array,
-              bir_angle=0*u.rad, nside=512, spectral_params=[1.59, 20, -3],
+              bir_angle=0*u.rad, nside=512, spectral_params=[1.54, 20, -3],
               sky_model='c1s0d0', sensitiviy_mode=2, one_over_f_mode=2,
-              instrument='SAT'):
+              instrument='SAT', overwrite_freq=None):
 
     model = lSO.sky_map(bir_angle=bir_angle, miscal_angles=miscal_angles_array,
                         frequencies_by_instrument=frequencies_by_instrument_array,
                         nside=nside, sky_model=sky_model, instrument=instrument)
 
-    model.get_frequency()
+    if overwrite_freq is not None:
+        model.frequencies = overwrite_freq
+    else:
+        model.get_frequency()
     model.get_bir_matrix()
     model.get_A_ev(fix_temp=True)
     model.evaluate_mixing_matrix(spectral_params)
 
     model.get_miscalibration_angle_matrix()
     model.get_noise(sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode)
+    if overwrite_freq is not None:
+        ind = np.where(V3.so_V3_SA_bands() == overwrite_freq)[0][0]
+        model.noise_covariance = model.noise_covariance[2*ind:2*ind+2, 2*ind:2*ind+2]
+        model.inv_noise = model.inv_noise[2*ind:2*ind+2, 2*ind:2*ind+2]
 
     model.get_projection_op()
 
@@ -185,36 +246,51 @@ def get_model(miscal_angles_array, frequencies_by_instrument_array,
 
 def run_MCMC(ddtn, model, sampled_miscal_freq, nsteps, discard_num,
              sampled_birefringence=False, prior=False,
-             walker_per_dim=2, prior_precision=(1*u.arcmin).to(u.rad).value,
-             prior_index=[0, 6], spectral_index=False, return_raw_samples=False,
-             save=False, path='./prior_tests/', parallel=False, nside=512):
+             walker_per_dim=2, angle_prior=[],
+             spectral_index=False, return_raw_samples=False,
+             save=False, path='./prior_tests/', parallel=False, nside=512,
+             prior_precision=0.1*u.rad,
+             prior_index=[2, 3], true_miscal_angles=np.array([0]*6)*u.rad,
+             p0=None):
 
     ndim = sampled_miscal_freq + sampled_birefringence + 2*spectral_index
     nwalkers = walker_per_dim*ndim
     # true_miscal_angles = np.array([0., 0.08333333, 0.16666667, 0.25, 0.33333333,
     #                                0.41666667])*u.rad
-    true_miscal_angles = np.array([0]*6)*u.rad
+    # true_miscal_angles = np.array([0]*6)*u.rad
 
-    std_6 = np.array([0.00017337, 0.00016427, 0.00013824, 0.0001337, 0.00013536, 0.00013666])
+    # if not prior:
+    #     angle_prior = []
+    # else:
+    #     angle_prior = []
+    #     for d in range(sampled_miscal_freq):
+    #         angle_prior.append([true_miscal_angles.value[d], prior_precision, int(d)])
+    #     angle_prior = np.array(angle_prior[prior_index[0]:prior_index[-1]])
+    if p0 is None:
+        flat_start = 0
+        if flat_start:
+            low = [-np.pi/4]*sampled_miscal_freq
+            low.append(0.5)
+            low.append(-5)
+            high = [np.pi/4]*sampled_miscal_freq
+            high.append(2.5)
+            high.append(-1)
+            p0 = np.random.uniform(low, high, (nwalkers, ndim))
 
-    if not prior:
-        angle_prior = []
-    else:
-        angle_prior = []
-        for d in range(sampled_miscal_freq):
-            angle_prior.append([true_miscal_angles.value[d], prior_precision, int(d)])
-        angle_prior = np.array(angle_prior[prior_index[0]:prior_index[-1]])
+        else:
+            std_6 = np.array([0.00017337, 0.00016427, 0.00013824,
+                              0.0001337, 0.00013536, 0.00013666])
 
-    p0 = np.random.normal(
-        true_miscal_angles.value[:sampled_miscal_freq], std_6*2, (nwalkers, sampled_miscal_freq))
+            p0 = np.random.normal(
+                true_miscal_angles.value[:sampled_miscal_freq], std_6*2, (nwalkers, sampled_miscal_freq))
 
-    if sampled_birefringence:
-        p0_bir = np.array([np.random.normal(0, std_6.max(), (nwalkers))])
-        p0 = np.concatenate((p0, p0_bir.T), axis=1)
+            if sampled_birefringence:
+                p0_bir = np.array([np.random.normal(0, std_6.max(), (nwalkers))])
+                p0 = np.concatenate((p0, p0_bir.T), axis=1)
 
-    if spectral_index:
-        p0_spectral = np.array(np.random.normal([1.5, -3], [0.5, 1], (nwalkers, 2)))
-        p0 = np.concatenate((p0, p0_spectral), axis=1)
+            if spectral_index:
+                p0_spectral = np.array(np.random.normal([1.5, -3], [0.5, 1], (nwalkers, 2)))
+                p0 = np.concatenate((p0, p0_spectral), axis=1)
 
     if parallel:
         with MPIPool() as pool:
@@ -236,7 +312,7 @@ def run_MCMC(ddtn, model, sampled_miscal_freq, nsteps, discard_num,
         sampler.reset()
         sampler.run_mcmc(p0, nsteps, progress=True)
     flat_samples = sampler.get_chain(discard=discard_num, flat=True)
-
+    # IPython.embed()
     file_name, file_name_raw = get_file_name_sample(
         sampled_miscal_freq, nsteps, discard_num,
         sampled_birefringence, prior,
@@ -260,8 +336,8 @@ def get_file_name_sample(sampled_miscal_freq, nsteps, discard_num,
                          sampled_birefringence=False, prior=False,
                          prior_precision=(1*u.arcmin).to(u.rad).value,
                          prior_index=[0, 6], spectral_index=False, nside=512):
-    file_name = 'priorfix_{}Samples_{}Discard'.format(nsteps, discard_num)
-    file_name_raw = 'priorfix_{}Samples_RAW'.format(nsteps)
+    file_name = 'new_{}Samples_{}Discard'.format(nsteps, discard_num)
+    file_name_raw = 'new_{}Samples_RAW'.format(nsteps)
 
     file_name += '_v2MiscalAll0'
     file_name_raw += '_v2MiscalAll0'
@@ -314,22 +390,32 @@ def main():
     # spectral = args.spectral
     # prior_indices = args.prior_indices
     # wMPI = args.MPI
+    INSTRU = 'SAT'
+    if INSTRU == 'SAT':
+        freq_number = 6
+        fsky = 0.1
+        lmax = 300
+        lmin = 30
 
-    nsteps = 11000  # args.nsteps
-    discard = 1000  # args.discard
+    nsteps = 20000  # args.nsteps
+    discard = 10000  # args.discard
     birefringence = 0  # args.birefringence
     spectral = 1  # args.spectral
-    prior_indices = [2, 4]  # args.prior_indices
     prior_flag = True
+    prior_indices = [2, 3]  # args.prior_indices
     # prior_precision = (1*u.arcmin).to(u.rad).value
-    prior_precision = (0.01*u.deg).to(u.rad).value
-    nside = 128
+    prior_precision = (0.1*u.deg).to(u.rad).value
+    nside = 512
     wMPI = 0  # args.MPI
     wMPI2 = 0
+    r_true = 0.01
+    r_str = '_r0p01'
+    beta_true = (0.35 * u.deg).to(u.rad)
+    nsim = 1000
 
     path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/run02032021/'
     # path_local = './test11k/'
-    path_local = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/SOf2f/samples/'
+    path_local = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/MCMCrerun_article/'
     path = path_local
 
     if wMPI2:
@@ -384,11 +470,22 @@ def main():
     start = time.time()
 
     # true_miscal_angles = np.arange(0, 0.5, 0.5/6)*u.rad
-    true_miscal_angles = np.array([0]*6)*u.rad
+    freq_number = 6
+    true_miscal_angles = (np.arange(1, 5, 4 / freq_number)*u.deg).to(u.rad)[::-1]
+    # true_miscal_angles = np.array([0]*freq_number)*u.rad
 
-    data6, model6 = data_and_model_quick(miscal_angles_array=true_miscal_angles,
-                                         frequencies_array=V3.so_V3_SA_bands(),
-                                         frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside)
+    # data6, model6 = data_and_model_quick(miscal_angles_array=true_miscal_angles,
+    #                                      frequencies_array=V3.so_V3_SA_bands(),
+    #                                      frequencies_by_instrument_array=[1, 1, 1, 1, 1, 1], nside=nside)
+    freq_by_instru = [1]*freq_number
+    sky_model = 'c1s1d1'
+    sensitiviy_mode = 1
+    one_over_f_mode = 1
+
+    data6, model6 = data_and_model_quick(miscal_angles_array=true_miscal_angles, bir_angle=beta_true,
+                                         frequencies_by_instrument_array=freq_by_instru, nside=nside,
+                                         sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
+                                         one_over_f_mode=one_over_f_mode, instrument=INSTRU)
 
     print('time initializing in s = ', time.time() - start)
     current, peak = tracemalloc.get_traced_memory()
@@ -418,10 +515,23 @@ def main():
         current, peak = tracemalloc.get_traced_memory()
         print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
     else:
-        S_cmb = np.load('S_cmb_n128_s1000_new.npy')
+        # IPython.embed()
+        # S_cmb = np.load('S_cmb_n128_s1000_new.npy')
+        S_cmb_name = 'S_cmb_n{}_s{}_r{:1}_b{:1.1e}'.format(nside, nsim, r_true, beta_true.value).replace(
+            '.', 'p') + '.npy'
+        print(S_cmb_name)
+        S_cmb = np.load(S_cmb_name)
+
         ASAt = model6.mix_effectiv[:, :2].dot(S_cmb).dot(model6.mix_effectiv[:, :2].T)
-        fg_freq_maps_full = data6.miscal_matrix.dot(data6.mixing_matrix)[
-            :, 2:].dot(data6.signal[2:])
+
+        # fg_freq_maps_full = data6.miscal_matrix.dot(data6.mixing_matrix)[
+        #     :, 2:].dot(data6.signal[2:])
+
+        from residuals import multi_freq_get_sky_fg
+        data6.get_pysm_sky()
+        fg_freq_maps_full = data6.miscal_matrix.dot(
+            multi_freq_get_sky_fg(data6.sky, data6.frequencies))
+
         ddt_fg = np.einsum('ik...,...kj->ijk', fg_freq_maps_full, fg_freq_maps_full.T)
         ddt_fg *= data6.mask
         n_obspix = np.sum(data6.mask == 1)
@@ -429,19 +539,19 @@ def main():
         ddtPnoise_masked_cleaned = n_obspix*(F + ASAt + model6.noise_covariance)
         current, peak = tracemalloc.get_traced_memory()
         print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
-
+    # IPython.embed()
     attr_remove = 1
     if attr_remove:
         delattr(data6, 'cmb_freq_maps')
-        delattr(data6, 'dust_freq_maps')
-        delattr(data6, 'sync_freq_maps')
-        delattr(data6, 'cmb_freq_rot')
+        # delattr(data6, 'dust_freq_maps')
+        # delattr(data6, 'sync_freq_maps')
+        # delattr(data6, 'cmb_freq_rot')
         delattr(data6, 'signal')
         delattr(data6, 'mask')
         delattr(data6, 'data')
 
-        delattr(model6, 'noise_cov_ell')
-        delattr(model6, 'inv_noise_ell')
+        # delattr(model6, 'noise_cov_ell')
+        # delattr(model6, 'inv_noise_ell')
         delattr(model6, 'noise_covariance')
         del data6
         if old:
@@ -451,11 +561,14 @@ def main():
     print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 
     angle_prior = []
-    for d in range(6):
-        angle_prior.append([true_miscal_angles.value[d], prior_precision, int(d)])
-    angle_prior = np.array(angle_prior)
+    if prior_flag:
+        for d in range(6):
+            angle_prior.append([true_miscal_angles.value[d], prior_precision, int(d)])
+        # angle_prior = np.array(angle_prior)
+        angle_prior = np.array(angle_prior[prior_indices[0]: prior_indices[-1]])
+
     param_array = np.array([0., 0.08333333, 0.16666667, 0.25, 0.33333333,
-                            0.41666667, 0., 1.59, -3])
+                            0.41666667, 0., 1.54, -3])
 
     start = time.time()
     test_ddt_clean = get_chi_squared_local(
@@ -469,9 +582,9 @@ def main():
     flat_samples, flat_samples_raw = run_MCMC(
         ddtPnoise_masked_cleaned, model6, sampled_miscal_freq=6, nsteps=nsteps, discard_num=discard,
         sampled_birefringence=birefringence, prior=prior_flag,
-        walker_per_dim=2, prior_precision=prior_precision,
-        prior_index=prior_indices, spectral_index=spectral, return_raw_samples=True,
-        save=True, path=path, parallel=wMPI, nside=nside)
+        walker_per_dim=2, angle_prior=angle_prior, spectral_index=spectral, return_raw_samples=True,
+        save=True, path=path, parallel=wMPI, nside=nside, prior_precision=prior_precision,
+        prior_index=prior_indices, true_miscal_angles=true_miscal_angles)
 
     print('time sampling in s = ', time.time() - start)
     current, peak = tracemalloc.get_traced_memory()
