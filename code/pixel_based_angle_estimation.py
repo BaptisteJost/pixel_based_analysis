@@ -30,6 +30,8 @@ def get_chi_squared_local(angle_array, ddtPN, model_skm, prior=False,
             print('bla')
             if not minimize:
                 return -np.inf
+            else:
+                return np.inf
 
         model_skm.evaluate_mixing_matrix([angle_array[-2], 20, angle_array[-1]])
 
@@ -41,6 +43,8 @@ def get_chi_squared_local(angle_array, ddtPN, model_skm, prior=False,
         print('blou')
         if not minimize:
             return -np.inf
+        else:
+            return np.inf
 
     if birefringence:
         model_skm.miscal_angles = np.append(angle_array[:-(-angle_index+1)], fixed_miscal_angles)

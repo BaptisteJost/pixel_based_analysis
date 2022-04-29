@@ -480,6 +480,22 @@ def spectral_first_deriv(angle_array, ddt, model, prior=False,
             gaussian_prior_deriv += (angle_array[int(miscal_priors[j, 2])] -
                                      miscal_priors[j, 0]) / (miscal_priors[j, 1]**2)
         deriv_vector[i] = deriv - gaussian_prior_deriv
+
+    if not 0.5 <= angle_array[-2] < 2.5 or not -5 <= angle_array[-1] <= -1:
+        print('bla jac')
+        an_array_1 = np.where(angle_array[-2] > 2.5, -np.inf, angle_array[-2])
+        an_array_1 = np.where(angle_array[-2] < 0.5, np.inf, angle_array[-2])
+        an_array_2 = np.where(angle_array[-1] > -1, -np.inf, angle_array[-1])
+        an_array_2 = np.where(angle_array[-1] < -5, np.inf, angle_array[-1])
+        angle_array[-2] = an_array_1
+        angle_array[-1] = an_array_2
+
+    if np.any(np.array(angle_array[:-2]) < (-0.5*np.pi)) or np.any(np.array(angle_array[:-2]) > (0.5*np.pi)):
+        print('blou jac neg')
+        an_array1 = np.where(angle_array[:-2] > 0.5*np.pi, -np.inf, angle_array[:-2])
+        an_array2 = np.where(angle_array[:-2] < -0.5*np.pi, np.inf, an_array1)
+        angle_array[:-2] = an_array2
+
     if minimize:
         return -deriv_vector
     else:
