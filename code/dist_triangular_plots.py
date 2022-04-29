@@ -97,7 +97,6 @@ range_bir = max(np.abs(min(flat_samples[:, 6])), np.abs(max(flat_samples[:, 6]))
 mean_bir = np.mean(flat_samples[:, 6])
 limits_bir = [mean_bir-3*range_bir, mean_bir+3*range_bir]
 limits_bir_2 = [min(flat_samples[:, 6]), max(flat_samples[:, 6])]
-
 distsamples = MCSamples(samples=flat_samples, names=labels, labels=labels,
                         ranges=boundaries)
 if prior_flag:

@@ -16,6 +16,8 @@ from scipy.optimize import minimize
 import numdifftools as nd
 from scipy.integrate import simps
 import bjlib.class_faraday as cf
+import emcee
+from fisher_pixel import fisher_new
 
 
 def get_diff_list(model, params):
@@ -159,18 +161,20 @@ def get_Wfg_maps(WQ, WU, freq_maps):
 
 def get_ys_alms(y_Q, y_U, lmax):
     if len(y_Q.shape) == 2:
+        # print('if ysalm')
         # shape : db; pixel
         dB_maps = np.zeros((y_Q.shape[0], 3, y_Q.shape[-1]))
         dB_maps[:, 1] = y_Q
         dB_maps[:, 2] = y_U
 
-        alms = np.array([hp.map2alm(stokes_maps, lmax=lmax, iter=10) for stokes_maps in dB_maps])
+        alms = np.array([hp.map2alm(stokes_maps, lmax=lmax, iter=3) for stokes_maps in dB_maps])
     else:
+        # print('else ysalm')
         stokes_maps = np.zeros((3, y_Q.shape[0]))
         stokes_maps[1] = y_Q
         stokes_maps[2] = y_U
 
-        alms = hp.map2alm(stokes_maps, lmax=lmax, iter=10)
+        alms = hp.map2alm(stokes_maps, lmax=lmax, iter=3)
 
     return alms
 
@@ -178,6 +182,7 @@ def get_ys_alms(y_Q, y_U, lmax):
 def get_ys_Cls(X_alms, Y_alms, lmax, fsky=1):
     if len(X_alms.shape) == 3 or len(Y_alms.shape) == 3:
         if len(X_alms.shape) == len(Y_alms.shape):
+            # print('if yCl')
             Cls = np.zeros((X_alms.shape[0], X_alms.shape[0], 3, lmax+1))
             # Cls2 = np.zeros((X_alms.shape[0], X_alms.shape[0], 3, lmax+1))
 
@@ -191,6 +196,8 @@ def get_ys_Cls(X_alms, Y_alms, lmax, fsky=1):
                     # Cls2[dBx, dBy] = spectra2
                     # return Cls, Cls2
         else:
+            # print('else1 yCl')
+
             if len(X_alms.shape) < len(Y_alms.shape):
                 print('ERROR: second argument cannot have larger dimension than first')
                 return None
@@ -202,6 +209,8 @@ def get_ys_Cls(X_alms, Y_alms, lmax, fsky=1):
                 Cls[dBx] = spectra
 
     else:
+        # print('else2yCl')
+
         spectra_ = hp.alm2cl(X_alms, Y_alms, lmax=lmax, nspec=5)
         spectra = np.array([spectra_[1], spectra_[2], spectra_[4]])
         Cls = spectra
@@ -209,7 +218,7 @@ def get_ys_Cls(X_alms, Y_alms, lmax, fsky=1):
     return Cls / fsky
 
 
-def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spectra=None, true_A_cmb=None):
+def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spectra=None, true_A_cmb=None, pivot_angle_index=None, reshape_fg_ys=None):
     '''============================computing Ws============================'''
     start_Ws = time.time()
     diff_list = get_diff_list(model, params)
@@ -223,46 +232,85 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
                                   AitNm1_list, term1_list, term2_list, invAtNm1A=None)
 
     diff_W = np.array(diff_W)
-    print('time Ws = ', time.time() - start_Ws)
+    if pivot_angle_index is not None:
+        diff_W = np.delete(diff_W, pivot_angle_index, 0)
+        diff_diff_W = np.delete(np.delete(diff_diff_W, pivot_angle_index, 0), pivot_angle_index, 1)
+    # print('time Ws = ', time.time() - start_Ws)
     '''========================Computing ys and alms========================'''
     # print('WARNING FSKY !!!!')
-    start_ys = time.time()
+    # IPython.embed()
 
-    y_Q = W[0].dot(fg_freq_maps)
-    y_U = W[1].dot(fg_freq_maps)
-    y_alms = get_ys_alms(y_Q=y_Q, y_U=y_U, lmax=lmax)
-    del y_Q, y_U
+    if reshape_fg_ys is None:
+        start_ys = time.time()
 
-    Y_Q = diff_W[:, 0].dot(fg_freq_maps)
-    Y_U = diff_W[:, 1].dot(fg_freq_maps)
-    Y_alms = get_ys_alms(y_Q=Y_Q, y_U=Y_U, lmax=lmax)
-    del Y_Q, Y_U
+        y_Q = W[0].dot(fg_freq_maps)
+        y_U = W[1].dot(fg_freq_maps)
+        y_alms = get_ys_alms(y_Q=y_Q, y_U=y_U, lmax=lmax)
+        del y_Q, y_U
 
-    V_Q = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 0])
-    V_U = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 1])
-    z_Q = V_Q.dot(fg_freq_maps)
-    z_U = V_U.dot(fg_freq_maps)
-    z_alms = get_ys_alms(y_Q=z_Q, y_U=z_U, lmax=lmax)
-    del V_Q, V_U, z_Q, z_U
-    print('time ys = ', time.time() - start_ys)
+        start_YQU = time.time()
+        Y_Q = diff_W[:, 0].dot(fg_freq_maps)
+        Y_U = diff_W[:, 1].dot(fg_freq_maps)
+        print('time YQU = ', time.time()-start_YQU)
+        start_Yalms = time.time()
+        Y_alms = get_ys_alms(y_Q=Y_Q, y_U=Y_U, lmax=lmax)
+        print('time Yalms = ', time.time()-start_Yalms)
+
+        del Y_Q, Y_U
+
+        V_Q = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 0])
+        V_U = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, 1])
+        z_Q = V_Q.dot(fg_freq_maps)
+        z_U = V_U.dot(fg_freq_maps)
+        z_alms = get_ys_alms(y_Q=z_Q, y_U=z_U, lmax=lmax)
+        del V_Q, V_U, z_Q, z_U
+        print('time ys = ', time.time() - start_ys)
+
+    if reshape_fg_ys is not None:
+        V = np.einsum('ij,ij...->...', sigma, diff_diff_W[:, :, :2])
+        start_ys = time.time()
+
+        Wfg_ys = W[:2].dot(reshape_fg_ys)
+        Wfg_ys_TEB = np.zeros([3, Wfg_ys.shape[-1]], dtype='complex')
+        Wfg_ys_TEB[1:] = Wfg_ys
+
+        Wfg_Ys = diff_W[:, :2].dot(reshape_fg_ys)
+        Wfg_Ys_TEB = np.zeros([diff_W.shape[0], 3, Wfg_Ys.shape[-1]], dtype='complex')
+        Wfg_Ys_TEB[:, 1:] = Wfg_Ys
+
+        zfg = V.dot(reshape_fg_ys)
+        zfg_TEB = np.zeros([3, zfg.shape[-1]], dtype='complex')
+        zfg_TEB[1:] = zfg
+        # print('time test ys = ', time.time() - start_ys)
 
     # '''===========================computing alms==========================='''
 
     '''===========================computing Cls==========================='''
     start_cl = time.time()
     Cl = {}
-    Cl['yy'] = get_ys_Cls(y_alms, y_alms, lmax, fsky)[:, lmin:]
-    Cl['YY'] = get_ys_Cls(Y_alms, Y_alms, lmax, fsky)[:, :, :, lmin:]
-    Cl['yz'] = get_ys_Cls(y_alms, z_alms, lmax, fsky)[:, lmin:]
-    Cl['zy'] = get_ys_Cls(z_alms, y_alms, lmax, fsky)[:, lmin:]
+    if reshape_fg_ys is None:
+        Cl['yy'] = get_ys_Cls(y_alms, y_alms, lmax, fsky)[:, lmin:]
+        Cl['YY'] = get_ys_Cls(Y_alms, Y_alms, lmax, fsky)[:, :, :, lmin:]
+        Cl['yz'] = get_ys_Cls(y_alms, z_alms, lmax, fsky)[:, lmin:]
+        Cl['zy'] = get_ys_Cls(z_alms, y_alms, lmax, fsky)[:, lmin:]
 
-    Cl['Yy'] = get_ys_Cls(Y_alms, y_alms, lmax, fsky)[:, :, lmin:]
-    # Cl['yY'] = get_ys_Cls(y_alms, Y_alms, lmax, fsky)
-    print('DANGER need to compute yY and zY in residuals ! EB and BE asymmetry otherwise')
-    Cl['Yz'] = get_ys_Cls(Y_alms, z_alms, lmax, fsky)[:, :, lmin:]  # attention à checker
-    # Cl['zY'] = get_ys_Cls(z_alms, Y_alms, lmax, fsky)  # attention à checker
-    del z_alms, Y_alms, y_alms
-    print('time Cls = ', time.time() - start_cl)
+        Cl['Yy'] = get_ys_Cls(Y_alms, y_alms, lmax, fsky)[:, :, lmin:]
+        # Cl['yY'] = get_ys_Cls(y_alms, Y_alms, lmax, fsky)
+        print('DANGER need to compute yY and zY in residuals ! EB and BE asymmetry otherwise')
+        Cl['Yz'] = get_ys_Cls(Y_alms, z_alms, lmax, fsky)[:, :, lmin:]  # attention à checker
+        # Cl['zY'] = get_ys_Cls(z_alms, Y_alms, lmax, fsky)  # attention à checker
+        del z_alms, Y_alms, y_alms
+
+    else:
+        Cl['yy'] = get_ys_Cls(Wfg_ys_TEB, Wfg_ys_TEB, lmax, fsky)[:, lmin:]
+        Cl['YY'] = get_ys_Cls(Wfg_Ys_TEB, Wfg_Ys_TEB, lmax, fsky)[:, :, :, lmin:]
+        Cl['yz'] = get_ys_Cls(Wfg_ys_TEB, zfg_TEB, lmax, fsky)[:, lmin:]
+        Cl['zy'] = get_ys_Cls(zfg_TEB, Wfg_ys_TEB, lmax, fsky)[:, lmin:]
+
+        Cl['Yy'] = get_ys_Cls(Wfg_Ys_TEB, Wfg_ys_TEB, lmax, fsky)[:, :, lmin:]
+        # print('DANGER need to compute yY and zY in residuals ! EB and BE asymmetry otherwise')
+        Cl['Yz'] = get_ys_Cls(Wfg_Ys_TEB, zfg_TEB, lmax, fsky)[:, :, lmin:]  # attention à checker
+    # print('time Cls = ', time.time() - start_cl)
 
     if cmb_spectra is not None:
         start_clmatrixcmb = time.time()
@@ -281,7 +329,7 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
         if len(cmb_spectra) == 6:
             Cl_matrix[1, 0] = cmb_spectra[4]
             Cl_matrix[0, 1] = cmb_spectra[4]
-        print('time cl matrix cmb = ', time.time() - start_clmatrixcmb)
+        # print('time cl matrix cmb = ', time.time() - start_clmatrixcmb)
 
         # yy_cmb1 = np.einsum('ij,jkl,km->iml', WA_cmb.T, Cl_matrix, WA_cmb)
         # yy_cmb2 = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_matrix, WA_cmb.T)
@@ -299,7 +347,7 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
                     'ij,jkl,km->iml', W_dB_cmb[i].T, Cl_matrix, W_dB_cmb[ii])
                 # YY_cmb_matrix2[i, ii] = np.einsum(
                 #     'ij,jkl,km->iml', W_dB_cmb[i], Cl_matrix, W_dB_cmb[ii].T)
-        print('time yy YY cmb = ', time.time() - start_ycmb)
+        # print('time yy YY cmb = ', time.time() - start_ycmb)
 
         start_Vcmb = time.time()
         V_cmb = np.einsum('ij,ij...->...', sigma, W_dBdB_cmb[:, :])
@@ -322,7 +370,7 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
         zy_cmb = np.array(zy_cmb).T
         # yz_cmb = yz_cmb2
         # zy_cmb = zy_cmb2
-        print('time V, yz, zy cmb = ', time.time() - start_Vcmb)
+        # print('time V, yz, zy cmb = ', time.time() - start_Vcmb)
         # IPython.embed()
         start_Yy = time.time()
         Yy_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
@@ -332,7 +380,7 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
         for i in range(sigma.shape[0]):
             Yy_cmb[i] = np.einsum('ij,jkl,km->iml', W_dB_cmb[i].T, Cl_matrix, WA_cmb)
             # yY_cmb[i] = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_matrix, W_dB_cmb[i].T)
-        print('time Yy cmb = ', time.time() - start_Yy)
+        # print('time Yy cmb = ', time.time() - start_Yy)
 
         start_Yz = time.time()
         Yz_cmb = np.zeros([sigma.shape[0], Cl_matrix.shape[0],
@@ -342,7 +390,7 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
         for i in range(sigma.shape[0]):
             Yz_cmb[i] = np.einsum('ij,jkl,km->iml', W_dB_cmb[i].T, Cl_matrix, V_cmb)
             # zY_cmb[i] = np.einsum('ij,jkl,km->iml', V_cmb, Cl_matrix, W_dB_cmb[i].T)
-        print('time Yz cmb = ', time.time() - start_Yz)
+        # print('time Yz cmb = ', time.time() - start_Yz)
 
         Cl_cmb['yy'] = yy_cmb[:, :, lmin:lmax+1]
         Cl_cmb['YY'] = YY_cmb_matrix[:, :, :, :, lmin:lmax+1]
@@ -427,13 +475,13 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
                         Cl_fg[key][:, 2], Cl_fg[key][:,  1]]])
                     temp_matrix_shape = np.einsum('ijkm->kijm', temp_matrix)
                     Cl_out[key] = Cl_cmb[key][:, :, :] + temp_matrix_shape
-            print('key_counter = ', key_counter)
+            # print('key_counter = ', key_counter)
             return Cl_out
         start_adder = time.time()
         Cl_out = Cl_adder(Cl, Cl_cmb)
         Cl_out_matrix = Cl_adder_matrix(Cl, Cl_cmb, lmin, lmax)
         ell = np.arange(lmin, lmax+1)
-        print('time adder = ', time.time() - start_adder)
+        # print('time adder = ', time.time() - start_adder)
         # IPython.embed()
         # Cl_out2 = Cl_adder(Cl, Cl_cmb2)
     '''========================computing residuals========================'''
@@ -444,8 +492,8 @@ def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spec
         bias = Cl_out['yy'] + Cl_out['yz'] + Cl_out['zy']
         var = stat**2 + 2 * np.einsum('i...,ij,j...->...',
                                       Cl_out['Yy'], sigma, Cl_out['Yy'])
-        print('time last = ', time.time() - start_last)
-        return stat, bias, var, Cl, Cl_cmb, Cl_out_matrix, ell, W[:2], diff_diff_W[:, :, :2, :]
+        # print('time last = ', time.time() - start_last)
+        return stat, bias, var, Cl, Cl_cmb, Cl_out_matrix, ell, W[:2], diff_W[:, :2, :], diff_diff_W[:, :, :2, :]
 
     else:
         stat = np.einsum('ij,ij...->...', sigma, Cl['YY'])
@@ -510,18 +558,12 @@ def cosmo_likelihood(Cl_model, Cl_data, Cl_residuals, sigma_res, ell, fsky):
 
 
 def cosmo_likelihood_nodeprojection(Cl_model_total, Cl_data, ell, fsky):
-    # IPython.embed()
+
     inv_model = np.linalg.inv(Cl_model_total.T).T
     dof = (2 * ell + 1) * fsky
     dof_over_Cl = dof * inv_model
 
     first_term_ell = np.einsum('ijl,jkl->ikl', dof_over_Cl, Cl_data)
-
-    # logm_list = []
-    # for l in range(dof_over_Cl.shape[-1]):
-    #     logm_list.append(logm(Cl_model_total[:, :, l]))
-    # logm_list = np.array(logm_list)
-    # logdetC = np.sum(dof*np.trace(logm_list.T))
 
     first_term = np.sum(np.trace(first_term_ell))
 
@@ -530,7 +572,7 @@ def cosmo_likelihood_nodeprojection(Cl_model_total, Cl_data, ell, fsky):
     return first_term + logdetC
 
 
-def likelihood_exploration(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, WA_cmb, VA_cmb, ell, fsky):
+def likelihood_exploration(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb, sigma_spectral, WA_cmb, VA_cmb, ell, fsky, minimisation=True):
     r = cosmo_params[0]
 
     beta = cosmo_params[1]*u.rad
@@ -550,18 +592,231 @@ def likelihood_exploration(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_Si
     WACAW = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
     WACAV = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, VA_cmb.T)
     VACAW = np.einsum('ij,jkl,km->iml', VA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
-    # IPython.embed()
     # Cl_model_total = Cl_cmb_rot_matrix + Cl_noise_matrix + tr_SigmaYY
+
+    YY_cmb_matrix = np.zeros([sigma_spectral.shape[0], sigma_spectral.shape[0], Cl_cmb_rot_matrix.shape[0],
+                              Cl_cmb_rot_matrix.shape[1], Cl_cmb_rot_matrix.shape[2]])
+    for i in range(sigma_spectral.shape[0]):
+        for ii in range(sigma_spectral.shape[0]):
+            YY_cmb_matrix[i, ii] = np.einsum(
+                'ij,jkl,km->iml', dWA_cmb[i].T, Cl_cmb_rot_matrix, dWA_cmb[ii])
+
+    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_spectral, YY_cmb_matrix)
+
     Cl_model_total = WACAW + Cl_noise_matrix + tr_SigmaYY + VACAW + WACAV
-    # IPython.embed()
+    # Cl_model_total = WACAW + Cl_noise_matrix + tr_SigmaYY + VACAW + WACAV
 
     likelihood = cosmo_likelihood_nodeprojection(
         Cl_model_total, Cl_data, ell, fsky)
     # print('-2logL = ', likelihood)
-    return likelihood
+    if not minimisation:
+        return -likelihood/2
+    else:
+        return likelihood/2
 
 
-def jac_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, WA_cmb, VA_cmb, ell, fsky):
+def get_model_WACAW_WACAVeheh(cosmo_params, Cl_fid, dWA_cmb, sigma_spectral,
+                              WA_cmb, VA_cmb):
+    r = cosmo_params[0]
+    beta = cosmo_params[1]*u.rad
+
+    Cl_cmb_model = np.zeros([4, Cl_fid['EE'].shape[0]])
+    Cl_cmb_model[1] = copy.deepcopy(Cl_fid['EE'])
+    Cl_cmb_model[2] = copy.deepcopy(Cl_fid['BlBl'])*1 + copy.deepcopy(Cl_fid['BuBu']) * r
+
+    Cl_cmb_rot = lib.cl_rotation(Cl_cmb_model.T, beta).T
+
+    Cl_cmb_rot_matrix = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
+    Cl_cmb_rot_matrix[0, 0] = copy.deepcopy(Cl_cmb_rot[1])
+    Cl_cmb_rot_matrix[1, 1] = copy.deepcopy(Cl_cmb_rot[2])
+    Cl_cmb_rot_matrix[1, 0] = copy.deepcopy(Cl_cmb_rot[4])
+    Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
+
+    WACAW = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
+    WACAV = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, VA_cmb.T)
+    VACAW = np.einsum('ij,jkl,km->iml', VA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
+
+    YY_cmb_matrix = np.zeros([sigma_spectral.shape[0], sigma_spectral.shape[0],
+                              Cl_cmb_rot_matrix.shape[0], Cl_cmb_rot_matrix.shape[1],
+                              Cl_cmb_rot_matrix.shape[2]])
+    for i in range(sigma_spectral.shape[0]):
+        for ii in range(sigma_spectral.shape[0]):
+            YY_cmb_matrix[i, ii] = np.einsum(
+                'ij,jkl,km->iml', dWA_cmb[i].T, Cl_cmb_rot_matrix, dWA_cmb[ii])
+
+    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_spectral, YY_cmb_matrix)
+
+    return WACAW, VACAW, WACAV, tr_SigmaYY, YY_cmb_matrix
+
+
+def simple_like(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, WA_cmb, ell, fsky):
+    r = cosmo_params[0]
+
+    beta = cosmo_params[1]*u.rad
+
+    Cl_cmb_model = np.zeros([4, Cl_fid['EE'].shape[0]])
+    Cl_cmb_model[1] = copy.deepcopy(Cl_fid['EE'])
+    Cl_cmb_model[2] = copy.deepcopy(Cl_fid['BlBl'])*1 + copy.deepcopy(Cl_fid['BuBu']) * r
+
+    Cl_cmb_rot = lib.cl_rotation(Cl_cmb_model.T, beta).T
+
+    Cl_cmb_rot_matrix = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
+    Cl_cmb_rot_matrix[0, 0] = copy.deepcopy(Cl_cmb_rot[1])
+    Cl_cmb_rot_matrix[1, 1] = copy.deepcopy(Cl_cmb_rot[2])
+    Cl_cmb_rot_matrix[1, 0] = copy.deepcopy(Cl_cmb_rot[4])
+    Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
+
+    WACAW = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
+
+    Cl_model_total = WACAW + Cl_noise_matrix
+
+    likelihood = cosmo_likelihood_nodeprojection(
+        Cl_model_total, Cl_data, ell, fsky)
+    return likelihood/2
+
+
+def jac_simple_like(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, WA_cmb, ell, fsky):
+    r = cosmo_params[0]
+
+    beta = cosmo_params[1]*u.rad
+
+    Cl_cmb_model = np.zeros([4, Cl_fid['EE'].shape[0]])
+    Cl_cmb_model[1] = copy.deepcopy(Cl_fid['EE'])
+    Cl_cmb_model[2] = copy.deepcopy(Cl_fid['BlBl'])*1 + copy.deepcopy(Cl_fid['BuBu']) * r
+    Cl_cmb_rot = lib.cl_rotation(Cl_cmb_model.T, beta).T
+
+    Cl_cmb_rot_matrix = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
+    Cl_cmb_rot_matrix[0, 0] = copy.deepcopy(Cl_cmb_rot[1])
+    Cl_cmb_rot_matrix[1, 1] = copy.deepcopy(Cl_cmb_rot[2])
+    Cl_cmb_rot_matrix[1, 0] = copy.deepcopy(Cl_cmb_rot[4])
+    Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
+    WACAW = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
+
+    Cl_cmb_dr = np.zeros([4, Cl_fid['EE'].shape[0]])
+    Cl_cmb_dr[2] = copy.deepcopy(Cl_fid['BuBu'])
+
+    Cl_cmb_rot = lib.cl_rotation(Cl_cmb_model.T, beta).T
+    Cl_cmb_dr_rot = lib.cl_rotation(Cl_cmb_dr.T, beta).T
+    Cl_cmb_derivrot = lib.cl_rotation_derivative(Cl_cmb_model.T, beta).T
+
+    dCldr = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
+    dCldr[0, 0] = copy.deepcopy(Cl_cmb_dr_rot[1])
+    dCldr[1, 1] = copy.deepcopy(Cl_cmb_dr_rot[2])
+    dCldr[1, 0] = copy.deepcopy(Cl_cmb_dr_rot[4])
+    dCldr[0, 1] = copy.deepcopy(Cl_cmb_dr_rot[4])
+    WACAWdr = np.einsum('ij,jkl,km->iml', WA_cmb, dCldr, WA_cmb.T)
+
+    dCldbeta = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
+    dCldbeta[0, 0] = copy.deepcopy(Cl_cmb_derivrot[1])
+    dCldbeta[1, 1] = copy.deepcopy(Cl_cmb_derivrot[2])
+    dCldbeta[1, 0] = copy.deepcopy(Cl_cmb_derivrot[4])
+    dCldbeta[0, 1] = copy.deepcopy(Cl_cmb_derivrot[4])
+    WACAWdb = np.einsum('ij,jkl,km->iml', WA_cmb, dCldbeta, WA_cmb.T)
+
+    WdCldr = WACAWdr
+    WdCldbeta = WACAWdb
+    deriv_list = [WdCldr, WdCldbeta]
+
+    Cl_model_total = WACAW + Cl_noise_matrix
+    inv_model = np.linalg.inv(Cl_model_total.T).T
+    dof = (2 * ell + 1) * fsky
+    dof_over_Cl = dof * inv_model
+
+    d_Cl = []
+    for i in range(2):
+        first_term_1 = np.einsum('ijl,jkl->ikl', dof_over_Cl, deriv_list[i])
+        first_term_2 = np.einsum('ijl,jkl->ikl', first_term_1, inv_model)
+        first_term_3 = np.einsum('ijl,jkl->ikl', first_term_2, Cl_data)
+        first_term = np.sum(np.trace(first_term_3))
+
+        second_term = np.sum(np.trace(copy.deepcopy(first_term_1)))
+
+        d_Cl.append(-first_term + second_term)
+    d_Cl = np.array(d_Cl)
+    return d_Cl/2
+
+
+def run_double_MC(p0, ddtPN, model_skm, nsteps, prior=False,
+                  fixed_miscal_angles=[], miscal_priors=[],
+                  birefringence=False, spectral_index=False,
+                  lmin=30, lmax=300, fsky=0.1,
+                  sensitiviy_mode=1, one_over_f_mode=1, INSTRU='SAT',
+                  cmb_spectra=None, true_A_cmb=None,
+                  Cl_fid=None, method_cosmo=None):
+    nwalkers = 16
+    ndim = 8
+    discard_num = 1
+    cosmo_list = []
+    sampler = emcee.EnsembleSampler(
+        nwalkers, ndim, double_MC_function, args=[
+            ddtPN, model_skm, prior,
+            fixed_miscal_angles, miscal_priors,
+            birefringence, spectral_index,
+            lmin, lmax, fsky,
+            sensitiviy_mode, one_over_f_mode, INSTRU,
+            cmb_spectra, true_A_cmb,
+            Cl_fid, method_cosmo, cosmo_list])
+    sampler.reset()
+    sampler.run_mcmc(p0, nsteps, progress=True)
+    flat_samples = sampler.get_chain(discard=discard_num, flat=True)
+    cosmo_list = np.array(cosmo_list)
+    return flat_samples, cosmo_list
+
+
+def double_MC_function(angle_array, ddtPN, model_skm, prior=False,
+                       fixed_miscal_angles=[], miscal_priors=[],
+                       birefringence=False, spectral_index=False,
+                       lmin=30, lmax=300, fsky=0.1,
+                       sensitiviy_mode=1, one_over_f_mode=1, INSTRU='SAT',
+                       cmb_spectra=None, true_A_cmb=None,
+                       Cl_fid=None, method_cosmo=None, cosmo_list=[],
+                       Ninvfactor=1,
+                       minimize_flag=False, params=None):
+    chi_squared = get_chi_squared_local(angle_array, ddtPN, model_skm, prior,
+                                        fixed_miscal_angles, miscal_priors,
+                                        birefringence, spectral_index, Ninvfactor,
+                                        minimize_flag, params)
+
+    Cl_noise, ell_noise = get_noise_Cl(
+        model_skm.mix_effectiv, lmax+1, fsky,
+        sensitiviy_mode, one_over_f_mode,
+        instrument=INSTRU, onefreqtest=1-spectral_index)
+    Cl_noise = Cl_noise[lmin-2:]
+    ell_noise = ell_noise[lmin-2:]
+    Cl_noise_matrix = np.zeros([2, 2, Cl_noise.shape[0]])
+    Cl_noise_matrix[0, 0] = Cl_noise
+    Cl_noise_matrix[1, 1] = Cl_noise
+
+    W = get_W(model_skm)
+    WA_cmb_true = W[:2].dot(true_A_cmb)
+    WA_cmb_est = W[:2].dot(model_skm.mix_effectiv[:, :2])
+
+    Cl_matrix = np.zeros((2, 2, len(cmb_spectra[0])))
+    Cl_matrix[0, 0] = cmb_spectra[1]
+    Cl_matrix[1, 1] = cmb_spectra[2]
+    if len(cmb_spectra) == 6:
+        Cl_matrix[1, 0] = cmb_spectra[4]
+        Cl_matrix[0, 1] = cmb_spectra[4]
+    WACAW_true = np.einsum('ij,jkl,km->iml', WA_cmb_true,
+                           Cl_matrix[..., lmin:lmax+1], WA_cmb_true.T)
+    Cl_data = WACAW_true + Cl_noise_matrix
+
+    ell = np.arange(lmin, lmax+1)
+
+    bounds_cosmo = ((-0.01, 5), (-np.pi/8, np.pi/8))
+    cosmo_array_start = np.random.uniform(np.array(bounds_cosmo)[:, 0],
+                                          np.array(bounds_cosmo)[:, 1])
+
+    res_cosmo = minimize(simple_like, cosmo_array_start, args=(
+                         Cl_fid, Cl_data, Cl_noise_matrix, WA_cmb_est, ell, fsky),
+                         bounds=bounds_cosmo, tol=1e-18, method=method_cosmo)
+
+    cosmo_list.append(res_cosmo.x)
+
+    return chi_squared
+
+
+def jac_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb, sigma_spectral, WA_cmb, VA_cmb, ell, fsky):
     r = cosmo_params[0]
     # IPython.embed()
     beta = cosmo_params[1]*u.rad
@@ -586,13 +841,6 @@ def jac_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, WA_cmb
     VACAW = np.einsum('ij,jkl,km->iml', VA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
     WACAW = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
 
-    # Cl_model_total = Cl_cmb_rot_matrix + Cl_noise_matrix + tr_SigmaYY
-    Cl_model_total = WACAW + Cl_noise_matrix + tr_SigmaYY + VACAW + WACAV
-
-    inv_model = np.linalg.inv(Cl_model_total.T).T
-    dof = (2 * ell + 1) * fsky
-    dof_over_Cl = dof * inv_model
-
     dCldr = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
     dCldr[0, 0] = copy.deepcopy(Cl_cmb_dr_rot[1])
     dCldr[1, 1] = copy.deepcopy(Cl_cmb_dr_rot[2])
@@ -601,7 +849,6 @@ def jac_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, WA_cmb
     WACAVdr = np.einsum('ij,jkl,km->iml', WA_cmb, dCldr, VA_cmb.T)
     VACAWdr = np.einsum('ij,jkl,km->iml', VA_cmb, dCldr, WA_cmb.T)
     WACAWdr = np.einsum('ij,jkl,km->iml', WA_cmb, dCldr, WA_cmb.T)
-    WdCldr = WACAWdr + VACAWdr + WACAVdr
 
     dCldbeta = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
     dCldbeta[0, 0] = copy.deepcopy(Cl_cmb_derivrot[1])
@@ -611,9 +858,36 @@ def jac_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, WA_cmb
     WACAVdb = np.einsum('ij,jkl,km->iml', WA_cmb, dCldbeta, VA_cmb.T)
     VACAWdb = np.einsum('ij,jkl,km->iml', VA_cmb, dCldbeta, WA_cmb.T)
     WACAWdb = np.einsum('ij,jkl,km->iml', WA_cmb, dCldbeta, WA_cmb.T)
-    WdCldbeta = WACAWdb + VACAWdb + WACAVdb
     # deriv_list = [dCldr, dCldbeta]
+
+    YY_cmb_matrix = np.zeros([sigma_spectral.shape[0], sigma_spectral.shape[0], Cl_cmb_rot_matrix.shape[0],
+                              Cl_cmb_rot_matrix.shape[1], Cl_cmb_rot_matrix.shape[2]])
+    YY_cmb_matrixdr = np.zeros([sigma_spectral.shape[0], sigma_spectral.shape[0], Cl_cmb_rot_matrix.shape[0],
+                                Cl_cmb_rot_matrix.shape[1], Cl_cmb_rot_matrix.shape[2]])
+    YY_cmb_matrixdB = np.zeros([sigma_spectral.shape[0], sigma_spectral.shape[0], Cl_cmb_rot_matrix.shape[0],
+                                Cl_cmb_rot_matrix.shape[1], Cl_cmb_rot_matrix.shape[2]])
+
+    for i in range(sigma_spectral.shape[0]):
+        for ii in range(sigma_spectral.shape[0]):
+            YY_cmb_matrix[i, ii] = np.einsum(
+                'ij,jkl,km->iml', dWA_cmb[i].T, Cl_cmb_rot_matrix, dWA_cmb[ii])
+            YY_cmb_matrixdr[i, ii] = np.einsum(
+                'ij,jkl,km->iml', dWA_cmb[i].T, dCldr, dWA_cmb[ii])
+            YY_cmb_matrixdB[i, ii] = np.einsum(
+                'ij,jkl,km->iml', dWA_cmb[i].T, dCldbeta, dWA_cmb[ii])
+
+    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_spectral, YY_cmb_matrix)
+    tr_SigmaYYdr = np.einsum('ij,jimnl->mnl', sigma_spectral, YY_cmb_matrixdr)
+    tr_SigmaYYdB = np.einsum('ij,jimnl->mnl', sigma_spectral, YY_cmb_matrixdB)
+
+    WdCldr = WACAWdr + VACAWdr + WACAVdr + tr_SigmaYYdr
+    WdCldbeta = WACAWdb + VACAWdb + WACAVdb + tr_SigmaYYdB
     deriv_list = [WdCldr, WdCldbeta]
+
+    Cl_model_total = WACAW + Cl_noise_matrix + tr_SigmaYY + VACAW + WACAV
+    inv_model = np.linalg.inv(Cl_model_total.T).T
+    dof = (2 * ell + 1) * fsky
+    dof_over_Cl = dof * inv_model
 
     d_Cl = []
     for i in range(2):
@@ -628,7 +902,102 @@ def jac_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, WA_cmb
     d_Cl = np.array(d_Cl)
     # d_Cl[0] *= -1
     print(d_Cl)
-    return d_Cl
+    return d_Cl/2
+
+
+def constrained_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb,
+                      sigma_spectral, WA_cmb, VA_cmb, total_prior_matrix,
+                      true_miscal_angles, pivot_angle_index, eval_angles,
+                      ell, fsky, minimisation=True):
+
+    r = cosmo_params[0]
+    beta = cosmo_params[1]*u.rad
+    pivot = cosmo_params[2]*u.rad
+
+    if not minimisation:
+        if r > 5 or r < -0.01:
+            print('bla1')
+            return -np.inf
+        elif beta.value < -np.pi/2 or beta.value > np.pi/2:
+            print('bla2')
+            return -np.inf
+        elif pivot.value < -np.pi/2 or pivot.value > np.pi/2:
+            print('bla3')
+            return -np.inf
+
+    new_angles = copy.deepcopy(eval_angles)
+    diff_pivot = pivot.value - eval_angles[pivot_angle_index]
+
+    new_angles += diff_pivot
+    new_angles[pivot_angle_index] = pivot.value
+
+    Cl_cmb_model = np.zeros([4, Cl_fid['EE'].shape[0]])
+    Cl_cmb_model[1] = copy.deepcopy(Cl_fid['EE'])
+    Cl_cmb_model[2] = copy.deepcopy(Cl_fid['BlBl'])*1 + copy.deepcopy(Cl_fid['BuBu']) * r
+
+    Cl_cmb_rot = lib.cl_rotation(Cl_cmb_model.T, beta).T
+
+    Cl_cmb_rot_matrix = np.zeros([2, 2, Cl_cmb_rot.shape[-1]])
+    Cl_cmb_rot_matrix[0, 0] = copy.deepcopy(Cl_cmb_rot[1])
+    Cl_cmb_rot_matrix[1, 1] = copy.deepcopy(Cl_cmb_rot[2])
+    Cl_cmb_rot_matrix[1, 0] = copy.deepcopy(Cl_cmb_rot[4])
+    Cl_cmb_rot_matrix[0, 1] = copy.deepcopy(Cl_cmb_rot[4])
+
+    WACAW = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
+    WACAV = np.einsum('ij,jkl,km->iml', WA_cmb, Cl_cmb_rot_matrix, VA_cmb.T)
+    VACAW = np.einsum('ij,jkl,km->iml', VA_cmb, Cl_cmb_rot_matrix, WA_cmb.T)
+
+    YY_cmb_matrix = np.zeros([sigma_spectral.shape[0], sigma_spectral.shape[0], Cl_cmb_rot_matrix.shape[0],
+                              Cl_cmb_rot_matrix.shape[1], Cl_cmb_rot_matrix.shape[2]])
+    for i in range(sigma_spectral.shape[0]):
+        for ii in range(sigma_spectral.shape[0]):
+            YY_cmb_matrix[i, ii] = np.einsum(
+                'ij,jkl,km->iml', dWA_cmb[i].T, Cl_cmb_rot_matrix, dWA_cmb[ii])
+
+    tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_spectral, YY_cmb_matrix)
+
+    Cl_model_total_ = WACAW + Cl_noise_matrix + tr_SigmaYY + VACAW + WACAV
+
+    rot_pivot = np.array([[np.cos(2*diff_pivot), np.sin(2*diff_pivot)],
+                          [-np.sin(2*diff_pivot), np.cos(2*diff_pivot)]])
+
+    Cl_model_total = np.einsum('ij,jkl,km->iml', rot_pivot.T, Cl_model_total_, rot_pivot)
+    Cl_data_rot = Cl_data
+
+    inv_sigma_miscal = np.linalg.inv(sigma_spectral[:5, :5])
+    angle_relat = np.delete(eval_angles, pivot_angle_index)
+    # angle_relat_true = np.delete(true_miscal_angles, pivot_angle_index).value
+    pivot_true = true_miscal_angles[pivot_angle_index].value
+
+    prior_matrix = np.delete(
+        np.delete(total_prior_matrix, pivot_angle_index, 0), pivot_angle_index, 1)[:-2, :-2]
+    prior_element_pivot = total_prior_matrix[pivot_angle_index, pivot_angle_index]
+    pivot = pivot.value
+
+    inv_model = np.linalg.inv(Cl_model_total.T).T
+    dof = (2 * ell + 1) * fsky
+    dof_over_Cl = dof * inv_model
+
+    first_term_ell = np.einsum('ijl,jkl->ikl', dof_over_Cl, Cl_data_rot)
+
+    A = angle_relat + pivot - eval_angles[pivot_angle_index]
+
+    radek_jost_prior = ((pivot-pivot_true)**2) * prior_element_pivot +\
+        A.T.dot(inv_sigma_miscal).dot(A) -\
+        (A.T.dot(inv_sigma_miscal)+angle_relat.T.dot(prior_matrix)).dot(np.linalg.inv(inv_sigma_miscal +
+                                                                                      prior_matrix)).dot(inv_sigma_miscal.dot(A)+prior_matrix.dot(angle_relat)) +\
+        np.log(np.linalg.det(inv_sigma_miscal + prior_matrix)) + \
+        angle_relat.T.dot(prior_matrix).dot(angle_relat)
+
+    first_term = np.sum(np.trace(first_term_ell))
+
+    logdetC = np.sum(dof*np.log(np.abs(np.linalg.det(Cl_model_total.T))))
+
+    likelihood = first_term + logdetC + radek_jost_prior
+    if not minimisation:
+        return -likelihood/2
+    else:
+        return likelihood/2
 
 
 def get_Cl_cmbBB(Alens=1., r=0.001, path_BB='.'):
@@ -643,11 +1012,14 @@ def get_Cl_cmbBB(Alens=1., r=0.001, path_BB='.'):
     return power_spectrum
 
 
-def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2, instrument='SAT'):
+def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2, instrument='SAT', onefreqtest=False):
     if instrument == 'SAT':
         V3_results = V3.so_V3_SA_noise(sensitiviy_mode, one_over_f_mode,
                                        SAC_yrs_LF=1, f_sky=fsky, ell_max=lmax, beam_corrected=True)
         noise_nl = np.repeat(V3_results[1], 2, 0)
+        if onefreqtest:
+            noise_nl = np.repeat(V3_results[1], 2, 0)[4:6]
+
         ell_noise = V3_results[0]
 
     elif instrument == 'Planck':
@@ -666,8 +1038,8 @@ def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2, instrument
     nl_inv = 1/noise_nl
     AtNA = np.einsum('fi, fl, fj -> lij', A, nl_inv, A)
     inv_AtNA = np.linalg.inv(AtNA)
-
     noise_cl = inv_AtNA.swapaxes(-3, -1)[0, 0]
+    # IPython.embed()
     return noise_cl, ell_noise
 
 
@@ -789,6 +1161,44 @@ def sigma2_int(like_mesh, like_r, like_beta, param_grid, r_index, beta_index):
     return sigma2_r, sigma2_beta, sigma2_beta_r
 
 
+def multi_freq_get_sky_fg(sky, freq):
+    freq_maps = []
+    import pysm
+    for f in freq:
+        dust_freq_maps = sky.dust(f) * \
+            pysm.convert_units('K_RJ', 'K_CMB', f)
+        sync_freq_maps = sky.synchrotron(f) *\
+            pysm.convert_units('K_RJ', 'K_CMB', f)
+        fg_f = dust_freq_maps + sync_freq_maps
+        freq_maps.append(fg_f[1:])
+    freq_maps_array = np.array(freq_maps)
+    shape = freq_maps_array.shape
+    return np.reshape(freq_maps_array, (shape[0]*shape[1], shape[2]))
+
+
+def get_SFN(data, model_data, path_BB, S_cmb_name, spectral_flag=True):
+    S_cmb = np.load(S_cmb_name)
+
+    ASAt = model_data.mix_effectiv[:, :2].dot(S_cmb).dot(model_data.mix_effectiv[:, :2].T)
+
+    data.get_pysm_sky()
+    fg_freq_maps_full = data.miscal_matrix.dot(multi_freq_get_sky_fg(data.sky, data.frequencies))
+    ddt_fg = np.einsum('ik...,...kj->ijk', fg_freq_maps_full, fg_freq_maps_full.T)
+    data.get_mask(path_BB)
+    mask = data.mask
+    mask[(mask != 0) * (mask != 1)] = 0
+
+    ddt_fg *= mask
+    fg_freq_maps = fg_freq_maps_full*mask
+    del fg_freq_maps_full
+
+    n_obspix = np.sum(mask == 1)
+    del mask
+    F = np.sum(ddt_fg, axis=-1)/n_obspix
+    data_model = n_obspix*(F*spectral_flag + ASAt + model_data.noise_covariance)
+    return data_model, fg_freq_maps*spectral_flag, n_obspix
+
+
 def main():
     INSTRU = 'SAT'
     if INSTRU == 'SAT':
@@ -822,15 +1232,17 @@ def main():
     beta_true = (0.35 * u.deg).to(u.rad)
     # beta_true = (0.0*u.deg).to(u.rad)
 
+    true_miscal_angles = (np.arange(1, 5, 4 / freq_number)*u.deg).to(u.rad)  # [::-1]
     # true_miscal_angles = np.array([0]*freq_number)*u.rad
-    # true_miscal_angles = (np.arange(0.1, 0.5, 0.4 / freq_number)*u.deg).to(u.rad)[::-1]
-    true_miscal_angles = (np.array([0.28] * freq_number)*u.deg).to(u.rad)
+    # true_miscal_angles = (np.array([0.28] * freq_number)*u.deg).to(u.rad)
     # true_miscal_angles = np.array([0]*6)*u.rad
     # true_miscal_angles[0] = 0.4333*u.rad
 
     prior = True
     prior_indices = []
     if prior:
+        # prior_indices = [5, 6]
+        # prior_indices = [2, 3]
         prior_indices = [2, 3]
     prior_precision = (0.1 * u.deg).to(u.rad).value
     prior_str = '{:1.1e}rad'.format(prior_precision)
@@ -877,8 +1289,8 @@ def main():
     model = pix.get_model(
         miscal_angles_array=initmodel_miscal, bir_angle=beta_true,
         frequencies_by_instrument_array=freq_by_instru,
-        nside=nside, spectral_params=[1.59, 20, -3],
-        sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
+        nside=nside, spectral_params=[1.54, 20, -3],
+        sky_model='c1s0d0', sensitiviy_mode=sensitiviy_mode,
         one_over_f_mode=one_over_f_mode, instrument=INSTRU)
 
     '''===========================getting data==========================='''
@@ -890,16 +1302,19 @@ def main():
 
     ASAt = model_data.mix_effectiv[:, :2].dot(S_cmb).dot(model_data.mix_effectiv[:, :2].T)
 
-    fg_freq_maps_full = data.miscal_matrix.dot(data.mixing_matrix)[
-        :, 2:].dot(data.signal[2:])
+    data.get_pysm_sky()
+    fg_freq_maps_full = data.miscal_matrix.dot(multi_freq_get_sky_fg(data.sky, data.frequencies))
+    # fg_freq_maps_full = data.miscal_matrix.dot(data.mixing_matrix)[
+    #     :, 2:].dot(data.signal[2:])
     ddt_fg = np.einsum('ik...,...kj->ijk', fg_freq_maps_full, fg_freq_maps_full.T)
-
+    # IPython.embed()
     data.get_mask(path_BB)
     mask = data.mask
     mask[(mask != 0) * (mask != 1)] = 0
 
     ddt_fg *= mask
     fg_freq_maps = fg_freq_maps_full*mask
+    # IPython.embed()
     del fg_freq_maps_full
 
     n_obspix = np.sum(mask == 1)
@@ -920,13 +1335,15 @@ def main():
     alpha_grid = np.linspace(-2*prior_precision/30, 2*prior_precision/30, 1000)
     chi2_grid = []
     angle_array_grid = true_miscal_angles.value.tolist()
-    angle_array_grid.append(1.59)
+    angle_array_grid.append(1.54)
     angle_array_grid.append(-3)
     model.n_obspix = n_obspix
+    '''
     for i in alpha_grid:
         angle_array_grid[2] = i
         chi2_grid.append(get_chi_squared_local(angle_array_grid, data_model,
                                                model, prior, [], angle_prior, False, True, 1, False))
+    '''
     # np.save('grid_prior0p01deg_b0_r0_n128_max', chi2_grid)
     # results_min = minimize(get_chi_squared_local, angle_array_start, args=(
     #                        data_model, model, prior, [], angle_prior, False, True, 1, True),
@@ -938,20 +1355,22 @@ def main():
     #                        bounds=((-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (-np.pi/4, np.pi/4), (0.5, 2.5), (-5, -1)))
 
     # IPython.embed()
+    # angle_array_start = np.random.uniform(np.array(bounds)[:, 0],
+    #                                       np.array(bounds)[:, 1])
     results_min = minimize(get_chi_squared_local, angle_array_start, args=(
         data_model, model, prior, [], angle_prior, False, True, 1, True, params),
         tol=1e-18, options={'maxiter': 1000}, jac=fshp.spectral_first_deriv, method='L-BFGS-B',
         bounds=bounds)
     print(results_min)
-    results_min.x[:freq_number] = 0
+    # results_min.x[:freq_number] = 0
     # results_min.x[-2] = 1.59
     # results_min.x[-1] = -3
     chi2_min = get_chi_squared_local(results_min.x, data_model, model,
                                      prior, [], angle_prior, False, True, 1, True)
     # chi2_minjac = get_chi_squared_local(results_minjac.x, data_model, model,
     #                                     prior, [], angle_prior, False, True, 1, True)
-    param_true = [0]*freq_number
-    param_true.append(1.59)
+    param_true = copy.deepcopy(true_miscal_angles.value.tolist())  # [0]*freq_number
+    param_true.append(1.54)
     param_true.append(-3)
     chi2_true = get_chi_squared_local(param_true, data_model, model,
                                       prior, [], angle_prior, False, True, 1, True)
@@ -973,11 +1392,12 @@ def main():
         results_min.x[: freq_number], bir_angle=beta_true,
         frequencies_by_instrument_array=freq_by_instru, nside=nside,
         spectral_params=[results_min.x[-2], 20, results_min.x[-1]],
-        sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
+        sky_model='c1s0d0', sensitiviy_mode=sensitiviy_mode,
         one_over_f_mode=one_over_f_mode, instrument=INSTRU)
     print('results - spectral_true = ', results_min.x[:freq_number] - true_miscal_angles.value)
-    print('results - spectral_true = ', results_min.x[-2] - 1.59)
+    print('results - spectral_true = ', results_min.x[-2] - 1.54)
     print('results - spectral_true = ', results_min.x[-1] + 3)
+    # IPython.embed()
     # np.save(save_path+'miscal_mini_pior2to4_'+prior_str+r_str, results_min.x)
 
     prior_matrix = np.zeros([len(params), len(params)])
@@ -1020,7 +1440,9 @@ def main():
     Cl_fid['EE'] = ps_planck[1, lmin:lmax+1]
 
     Cl_noise, ell_noise = get_noise_Cl(
-        model_results.mix_effectiv, lmax+1, fsky, sensitiviy_mode, one_over_f_mode, instrument=INSTRU)
+        model_results.mix_effectiv, lmax+1, fsky,
+        sensitiviy_mode, one_over_f_mode,
+        instrument=INSTRU)
     Cl_noise = Cl_noise[lmin-2:]
     ell_noise = ell_noise[lmin-2:]
     Cl_noise_matrix = np.zeros([2, 2, Cl_noise.shape[0]])
@@ -1039,6 +1461,8 @@ def main():
 
     cosmo_params = [0.03, 0.04]
     # IPython.embed()
+    # cosmo_array_start = np.random.uniform(np.array(bounds_cosmo)[:, 0],
+    #                                       np.array(bounds_cosmo)[:, 1])
     results_cosmp = minimize(likelihood_exploration, cosmo_params, args=(
         Cl_fid, Cl_data, Cl_noise_matrix, tr_SigmaYY, WA_cmb, VA_cmb, ell, fsky),
         bounds=bounds_cosmo, tol=1e-18,

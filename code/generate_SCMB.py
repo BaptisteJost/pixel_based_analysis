@@ -28,8 +28,10 @@ def main():
 
     nside = 512
     nsim_cmb = 1000
+
     r = 0.0
     bire_angle = (0.0*u.deg).to(u.rad)
+
     A_lens = 1
     path_BB_local = '/home/baptiste/BBPipe'
     path_BB_NERSC = '/global/homes/j/jost/BBPipe'
@@ -60,6 +62,7 @@ def main():
     if comm.rank == root:
         S_sim_mpi = np.empty((np.shape(S_sim)[0]*size_mpi,)+np.shape(S_sim)[1:])
         S_sim_map_mpi = np.empty((size_mpi,)+np.shape(S_sim_map))
+
     comm.Gather(S_sim, S_sim_mpi, root)
     comm.Gather(S_sim_map, S_sim_map_mpi, root)
 
@@ -73,8 +76,8 @@ def main():
         S_cmb_mpi_name = 'data/New_S_cmb_mpi_n{}_s{}_r{:1}_b{:1.1e}'.format(nside, nsim_cmb, r, bire_angle.value).replace(
             '.', 'p') + '.npy'
 
-        S_cmb_map_name = 'data/New_S_cmb_maps_n{}_s{}_r{:1}_b{:1.1e}'.format(nside, nsim_cmb, r, bire_angle.value).replace(
-            '.', 'p') + '.npy'
+        S_cmb_map_name = 'data/New_S_cmb_maps_n{}_s{}_r{:1}_b{:1.1e}'.format(
+            nside, nsim_cmb, r, bire_angle.value).replace('.', 'p') + '.npy'
         np.save(S_cmb_name, S_cmb)
         np.save(S_cmb_map_name, S_cmb_map)
         np.save(S_cmb_mpi_name, S_sim_mpi)

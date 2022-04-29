@@ -151,12 +151,20 @@ def main():
     artist_tot = [artist_true[0], artists_all[1], artists_fg[1], artists_fg_nomiscal[1],
                   artists_miscal_flat[1], artists_miscal[1], artists_miscal_descending[1],
                   artists_fg_nomiscalBB[1]]
-    label_tot = ['Input parameters', 'Full pipeline', r'$93 GHz$ map without foreground cleaning and no miscalibration correction $\alpha_{93} = 0.28^{\circ}$',
-                 r'$93GHz$ map without foreground cleaning and $\alpha_{93} = 0^{\circ}$',
-                 r'No miscalibration correction, $\alpha_{i} = 0.28^{\circ} \quad \forall i $ ',
+    # label_tot = ['Input parameters', 'Full pipeline', r'$93 GHz$ map without foreground cleaning and no miscalibration correction $\alpha_{93} = 0.28^{\circ}$',
+    #              r'$93GHz$ map without foreground cleaning and $\alpha_{93} = 0^{\circ}$',
+    #              r'No miscalibration correction, $\alpha_{i} = 0.28^{\circ} \quad \forall i $ ',
+    #              r'No miscalibration correction, $\alpha_{i} = 0.1^{\circ} + i*0.066^{\circ} $',
+    #              r'No miscalibration correction, $\alpha_{i} = 0.1^{\circ} + (5-i)*0.066^{\circ} $',
+    #              r'$93GHz$ map without foreground cleaning, miscalibration set to $0^{\circ}$. Only BB used in likelihood.']
+    label_tot = [r'Input parameters $r = 0.01$, $\beta_b = 0.35^{\circ}$',
+                 'Full pipeline',
+                 r'$93 GHz$ map NO foreground cleaning, NO miscalibration correction',
+                 r'$93GHz$ map NO foreground cleaning',
+                 r'No miscalibration correction',
                  r'No miscalibration correction, $\alpha_{i} = 0.1^{\circ} + i*0.066^{\circ} $',
                  r'No miscalibration correction, $\alpha_{i} = 0.1^{\circ} + (5-i)*0.066^{\circ} $',
-                 r'$93GHz$ map without foreground cleaning, miscalibration set to $0^{\circ}$. Only BB used in likelihood.']
+                 r'$93GHz$ map NO foreground cleaning. Only BB used in likelihood.']
     plt.legend(artist_tot, label_tot,  loc='lower left', fontsize=20)  # handleheight=2,
     plt.xlabel('$r$', fontsize=25)
     plt.ylabel(r'$\beta_b$ in degrees', fontsize=25)
@@ -174,8 +182,12 @@ def main():
     ax.xaxis.set_major_formatter(ticker.FuncFormatter(ticks_format))
     ax.tick_params(axis='both', which='major', labelsize=15)
     ax.tick_params(axis='both', which='minor', labelsize=8)
-    plt.savefig('../results_and_data/potatoe/'+'cosmo_likelihood_gridding_comparisonV2.pdf',
+    plt.savefig('../results_and_data/potatoe/'+'cosmo_likelihood_gridding_comparisonV2_CMBFRANCE.pdf',
                 dpi=200)  # , bbox_inches='tight')
+    plt.savefig('../results_and_data/potatoe/'+'cosmo_likelihood_gridding_comparisonV2_CMBFRANCE.svg',
+                dpi=200)
+    plt.savefig('../results_and_data/potatoe/'+'cosmo_likelihood_gridding_comparisonV2_CMBFRANCE.png',
+                dpi=200)
     plt.show()
     IPython.embed()
     exit()
