@@ -5,7 +5,7 @@
 #SBATCH -J S_2k_64
 #SBATCH --mail-user=jost@apc.in2p3.fr
 #SBATCH --mail-type=ALL
-#SBATCH -t 02:00:00
+#SBATCH -t 00:50:00
 
 
 #OpenMP settings:
