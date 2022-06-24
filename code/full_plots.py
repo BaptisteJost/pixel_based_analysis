@@ -102,13 +102,15 @@ def main():
 
     save_path__ = save_path_.replace('23', '22')
     save_path = save_path__ + args.folder_end + '/'
+    save_path = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/full_pipeline/20220405_constrained35/'
     print()
     print(save_path)
 
     rad2deg = (1*u.rad).to(u.deg).value
 
     plt.switch_backend("Qt5Agg")
-
+    import IPython
+    IPython.embed()
     '''triangle plot spectral MCMC'''
     if spectral_MCMC_flag:
         labels = [r'\alpha_{{{}}}'.format(i) for i in frequencies_plot]
@@ -176,7 +178,8 @@ def main():
             lines.append(mlines.Line2D([], [], **g.lines_added[2]))
         else:
             lines.append(mlines.Line2D([], [], **g.lines_added[1]))
-
+        import IPython
+        IPython.embed()
         g.legend = g.fig.legend(
             lines, options_dict['legend_labels'], loc=g.settings.legend_loc, **legend_args)
         plt.savefig(save_path+'spectral_MCMC.png', bbox_inches='tight', dpi=200)

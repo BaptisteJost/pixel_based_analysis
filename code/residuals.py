@@ -958,14 +958,15 @@ def constrained_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb,
 
     Cl_model_total_ = WACAW + Cl_noise_matrix + tr_SigmaYY + VACAW + WACAV
 
-    rot_pivot = np.array([[np.cos(2*diff_pivot), np.sin(2*diff_pivot)],
-                          [-np.sin(2*diff_pivot), np.cos(2*diff_pivot)]])
+    rot_pivot = np.array([[np.cos(2*diff_pivot), -np.sin(2*diff_pivot)],
+                          [np.sin(2*diff_pivot), np.cos(2*diff_pivot)]])
 
     Cl_model_total = np.einsum('ij,jkl,km->iml', rot_pivot.T, Cl_model_total_, rot_pivot)
     Cl_data_rot = Cl_data
 
     inv_sigma_miscal = np.linalg.inv(sigma_spectral[:5, :5])
     angle_relat = np.delete(eval_angles, pivot_angle_index)
+    true_prior = np.delete(true_miscal_angles, pivot_angle_index).value
     # angle_relat_true = np.delete(true_miscal_angles, pivot_angle_index).value
     pivot_true = true_miscal_angles[pivot_angle_index].value
 
@@ -982,13 +983,20 @@ def constrained_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb,
 
     A = angle_relat + pivot - eval_angles[pivot_angle_index]
 
+    # radek_jost_prior = ((pivot-pivot_true)**2) * prior_element_pivot +\
+    #     A.T.dot(inv_sigma_miscal).dot(A) -\
+    #     (A.T.dot(inv_sigma_miscal)+angle_relat.T.dot(prior_matrix)).dot(np.linalg.inv(inv_sigma_miscal +
+    #                                                                                   prior_matrix)).dot(inv_sigma_miscal.dot(A)+prior_matrix.dot(angle_relat)) +\
+    #     np.log(np.linalg.det(inv_sigma_miscal + prior_matrix)) + \
+    #     angle_relat.T.dot(prior_matrix).dot(angle_relat)
+
     radek_jost_prior = ((pivot-pivot_true)**2) * prior_element_pivot +\
         A.T.dot(inv_sigma_miscal).dot(A) -\
-        (A.T.dot(inv_sigma_miscal)+angle_relat.T.dot(prior_matrix)).dot(np.linalg.inv(inv_sigma_miscal +
-                                                                                      prior_matrix)).dot(inv_sigma_miscal.dot(A)+prior_matrix.dot(angle_relat)) +\
+        (A.T.dot(inv_sigma_miscal)+true_prior.T.dot(prior_matrix)).dot(np.linalg.inv(inv_sigma_miscal +
+                                                                                     prior_matrix)).dot(inv_sigma_miscal.dot(A)+prior_matrix.dot(true_prior)) +\
         np.log(np.linalg.det(inv_sigma_miscal + prior_matrix)) + \
-        angle_relat.T.dot(prior_matrix).dot(angle_relat)
-
+        true_prior.T.dot(prior_matrix).dot(true_prior)
+    # radek_jost_prior +=
     first_term = np.sum(np.trace(first_term_ell))
 
     logdetC = np.sum(dof*np.log(np.abs(np.linalg.det(Cl_model_total.T))))

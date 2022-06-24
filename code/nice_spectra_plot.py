@@ -118,7 +118,8 @@ norm = mpl.colors.Normalize(vmin=0, vmax=1)
 cmap = mpl.cm.ScalarMappable(norm=norm, cmap=newcmp)  # YlOrBr_r
 cmap.set_array([])
 cbar = plt.colorbar(cmap)
-cbar.set_label('rotation angle in degrees', fontsize=20)
+cbar.set_label('rotation angle in degrees', fontsize=25)
+cbar.ax.tick_params(labelsize=20)
 
 if plot_fg:
     alpha_fg = 0.8
@@ -180,6 +181,7 @@ ax[0].legend(artist_EE, label_EE, fontsize=15, loc='upper left')
 
 
 plt.subplots_adjust(wspace=0.08)
-plt.savefig('birefringence_spectra_fg_3panelsV2.pdf', dpi=200)  # , bbox_inches='tight')
+plt.savefig('birefringence_spectra_fg_3panelsV3.pdf', dpi=200)  # , bbox_inches='tight')
+plt.savefig('birefringence_spectra_fg_3panelsV3.png', dpi=200)  # , bbox_inches='tight')
 plt.show()
 IPython.embed()

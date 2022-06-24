@@ -87,12 +87,13 @@ else:
 shutil.copy('config.py', save_path)
 
 if prior_gridding:
-    precision_array = np.logspace(-4, np.log10(5), 40)
-    precision_array = np.append(precision_array, [0.01, 0.1, 1])
-    precision_array = np.sort(precision_array) * u.deg.to(u.rad)
-
+    # precision_array = np.logspace(-4, np.log10(5), 40)
+    # precision_array = np.append(precision_array, [0.01, 0.1, 1])
+    # precision_array = np.sort(precision_array) * u.deg.to(u.rad)
+    precision_array = np.load(
+        '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/full_pipeline/double_sample_grid/prior_precision_grid.npy') * u.deg.to(u.rad)
     pivot_angle_index = 2
-    one_prior = True
+    one_prior = False
     if one_prior:
         prior_indices = [pivot_angle_index, pivot_angle_index+2]
     else:
@@ -157,8 +158,8 @@ fisher_pivot_array = []
 fisher_cosmo_prior_array = []
 fisher_cosmo_array = []
 bias_input_array = np.array([0])
-bias_input = 0
-
+bias_input = 1*u.deg.to(u.rad)
+# IPython.embed()
 for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
     input_angles[pivot_angle_index] = true_miscal_angles[pivot_angle_index].value + bias_input
     input_angle_array.append(copy.deepcopy(input_angles))
@@ -222,7 +223,7 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
     dWA_cmb = dW_cmb.dot(model_results.mix_effectiv[:, :2])
     W_dBdB_cmb = ddW_cmb.dot(model_results.mix_effectiv[:, :2])
     VA_cmb = np.einsum('ij,ij...->...', sigma_spectral, W_dBdB_cmb[:, :])
-    IPython.embed()
+    # IPython.embed()
     '''Cosmo likelihood minimisation'''
     Cl_noise, ell_noise = get_noise_Cl(
         model_results.mix_effectiv, lmax+1, fsky,
@@ -253,9 +254,10 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
     cosmo_array_start = np.random.uniform(
         np.array(bounds_rand)[:, 0], np.array(bounds_rand)[:, 1])
     print('cosmo_array_start=', cosmo_array_start)
+    # IPython.embed()
     result_cosmo = minimize(constrained_cosmo, cosmo_array_start,
                             args=(Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb, sigma_spectral,
-                                  WA_cmb, VA_cmb, prior_matrix, input_angles*u.rad,
+                                  WA_cmb, VA_cmb, prior_matrix, true_miscal_angles*u.rad,
                                   pivot_angle_index, angle_eval,  ell, fsky, True),
                             bounds=bounds_cosmo2)
     true_cosmo_params = [r_true, beta_true.value, true_miscal_angles[pivot_angle_index].value]
@@ -371,6 +373,7 @@ np.save(save_path + 'fisher_pivot_array.npy', fisher_pivot_array)
 np.save(save_path + 'fisher_cosmo_prior_array.npy', fisher_cosmo_prior_array)
 np.save(save_path + 'fisher_cosmo_array.npy', fisher_cosmo_array)
 
+exit()
 # IPython.embed()
 if cosmo_MCMC_flag:
     init_cosmo_MCMC = np.random.normal(

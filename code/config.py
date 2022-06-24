@@ -28,14 +28,14 @@ else:
     print('ERROR : Machine not recognized')
     exit()
 
-save_path_ = pixel_path + 'results_and_data/full_pipeline/' + \
-    date.today().strftime('%Y%m%d') + '_constrained'
+save_path_ = pixel_path + 'results_and_data/full_pipeline/Method_comparaison/' + \
+    date.today().strftime('%Y%m%d') + '_constrained_'
 
 
 '''Cosmology params'''
-r_true = 0.01
+r_true = 0.0
 r_str = '_r0p01'
-beta_true = (0.35 * u.deg).to(u.rad)
+beta_true = (0.0 * u.deg).to(u.rad)
 A_lens_true = 1
 
 test1freq = False
@@ -74,8 +74,8 @@ freq_by_instru = [1]*freq_number
 '''Sky simulation params'''
 nsim = 1000
 sky_model = 'c1s0d0'
-# true_miscal_angles = (np.arange(1, 5, 4 / freq_number)*u.deg).to(u.rad)
-true_miscal_angles = (np.array([1]*freq_number)*u.deg).to(u.rad)
+true_miscal_angles = (np.arange(1, 5, 4 / freq_number)*u.deg).to(u.rad)
+# true_miscal_angles = (np.array([1]*freq_number)*u.deg).to(u.rad)
 
 
 '''Spectral likelihood minimisation params'''
@@ -100,7 +100,7 @@ initmodel_miscal = np.array([0]*freq_number)*u.rad
 angle_array_start = np.random.uniform(np.array(bounds)[:, 0],
                                       np.array(bounds)[:, 1])
 '''Prior information'''
-prior_gridding = False
+prior_gridding = True
 
 input_angles = copy.deepcopy(true_miscal_angles.value)  # + \
 

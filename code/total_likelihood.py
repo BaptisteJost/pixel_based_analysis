@@ -1,3 +1,4 @@
+from config import *
 import IPython
 from astropy import units as u
 import argparse
@@ -15,7 +16,6 @@ import copy
 import time
 from residuals import constrained_cosmo, get_ys_alms
 from emcee import EnsembleSampler
-from config import *
 import shutil
 import bjlib.lib_project as lib
 from residuals import get_SFN, get_diff_list, get_diff_diff_list,\
@@ -505,6 +505,7 @@ def main():
     # dd_fg = np.einsum('ip,jp->ijp', fg_freq_maps, fg_freq_maps)
     fg_ys = get_ys_alms(y_Q=fg_freq_maps[::2], y_U=fg_freq_maps[1::2], lmax=lmax)
     reshape_fg_ys = fg_ys[:, 1:].reshape([12, 45451])
+    IPython.embed()
 
     scatter = [prior_precision]*freq_number
     scatter.append(0.1)
