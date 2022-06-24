@@ -5,12 +5,12 @@ import bjlib.likelihood_SO as lSO
 from astropy import units as u
 import bjlib.V3calc as V3
 import emcee
-from multiprocessing import Pool
+# from multiprocessing import Pool
 # import argparse
-from schwimmbad import MPIPool
-from schwimmbad import MultiPool
+# from schwimmbad import MPIPool
+# from schwimmbad import MultiPool
 
-import cloudpickle
+# import cloudpickle
 import tracemalloc
 import os
 import sys
