@@ -1176,7 +1176,7 @@ def multi_freq_get_sky_fg(sky, freq):
     return np.reshape(freq_maps_array, (shape[0]*shape[1], shape[2]))
 
 
-def get_SFN(data, model_data, path_BB, S_cmb_name, spectral_flag=True):
+def get_SFN(data, model_data, path_BB, S_cmb_name, spectral_flag=True, addnoise=1):
     S_cmb = np.load(S_cmb_name)
 
     ASAt = model_data.mix_effectiv[:, :2].dot(S_cmb).dot(model_data.mix_effectiv[:, :2].T)
@@ -1195,7 +1195,7 @@ def get_SFN(data, model_data, path_BB, S_cmb_name, spectral_flag=True):
     n_obspix = np.sum(mask == 1)
     del mask
     F = np.sum(ddt_fg, axis=-1)/n_obspix
-    data_model = n_obspix*(F*spectral_flag + ASAt + model_data.noise_covariance)
+    data_model = n_obspix*(F*spectral_flag + ASAt + addnoise*model_data.noise_covariance)
     return data_model, fg_freq_maps*spectral_flag, n_obspix
 
 

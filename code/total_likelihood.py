@@ -1,26 +1,23 @@
 import IPython
 from astropy import units as u
-import argparse
-import os
-from bjlib.class_faraday import power_spectra_obj, fisher_pws
-from bjlib.lib_project import cl_rotation_derivative, get_dr_cov_bir_EB
-from copy import deepcopy
+# import argparse
+# import os
+# from copy import deepcopy
 import numpy as np
 from fisher_pixel import fisher_new
 from scipy.optimize import minimize
-from pixel_based_angle_estimation import data_and_model_quick, get_model, \
-    get_chi_squared_local, run_MCMC, constrained_chi2
+from pixel_based_angle_estimation import data_and_model_quick, get_model
 import matplotlib.pyplot as plt
 import copy
 import time
-from residuals import constrained_cosmo, get_ys_alms
+from residuals import get_ys_alms
 from emcee import EnsembleSampler
 from config import *
-import shutil
+# import shutil
 import bjlib.lib_project as lib
 from residuals import get_SFN, get_diff_list, get_diff_diff_list,\
-    get_residuals, likelihood_exploration, get_noise_Cl, \
-    get_model_WACAW_WACAVeheh, run_double_MC, multi_freq_get_sky_fg
+    get_residuals, get_noise_Cl, \
+    multi_freq_get_sky_fg
 from residuals import get_W, get_ys_Cls
 from bjlib import V3calc as V3
 
@@ -28,6 +25,8 @@ from bjlib import V3calc as V3
 # from schwimmbad import MPIPool
 # import sys
 from mpi4py import MPI
+from os import path as p
+import tracemalloc
 
 
 def spectral_sampling(spectral_params, ddt, model_skm, total_prior_matrix, prior_centre, minimisation=False):
@@ -60,9 +59,9 @@ def spectral_sampling(spectral_params, ddt, model_skm, total_prior_matrix, prior
     Prior = (angle_eval.value - prior_centre).T.dot(
         total_prior_matrix[:freq_number, :freq_number]).dot(angle_eval.value - prior_centre)
     if minimisation:
-        return -spectral_like + Prior
+        return (-spectral_like + Prior)/2
     else:
-        return spectral_like - Prior
+        return (spectral_like - Prior)/2
 
 
 def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_f_mode, beam_corrected, one_over_ell):
@@ -102,6 +101,14 @@ def cosmo_sampling(cosmo_params, Cl_cmb_data_matrix, reshape_fg_ys, Cl_fid, Cl_n
     r = cosmo_params[0]
     beta = cosmo_params[1]*u.rad
 
+    if not minimisation:
+        if r > 5 or r < -0.01:
+            print('bla1')
+            return -np.inf
+        elif beta.value < -np.pi/2 or beta.value > np.pi/2:
+            print('bla2')
+            return -np.inf
+
     Wfg_ys = W[:2].dot(reshape_fg_ys)
     Wfg_ys_TEB = np.zeros([3, Wfg_ys.shape[-1]], dtype='complex')
     Wfg_ys_TEB[1:] = Wfg_ys
@@ -136,12 +143,13 @@ def cosmo_sampling(cosmo_params, Cl_cmb_data_matrix, reshape_fg_ys, Cl_fid, Cl_n
 
     first_term = np.sum(np.trace(first_term_ell))
 
-    logdetC = np.sum(dof*np.log(np.linalg.det(Cl_model_total.T)))
+    # logdetC = np.sum(dof*np.log(np.linalg.det(Cl_model_total.T)))
+    logdetC = np.sum(dof*np.log(np.abs(np.linalg.det(Cl_model_total.T))))
     likelihood_cosmo = first_term + logdetC
     if minimisation:
-        return likelihood_cosmo
+        return likelihood_cosmo/2
     else:
-        return -likelihood_cosmo
+        return -likelihood_cosmo/2
 
 
 def spectral_cosmo_onthefly(spectral_params, cosmo_params_list, ddt, model_skm, prior_matrix, prior_centre, Cl_cmb_data_matrix, reshape_fg_ys):
@@ -465,20 +473,45 @@ def homemade_MCMC(likelihood, like_args, p, n_samples, burn_in, lag=1, prior=Non
 
 
 def main():
+    comm = MPI.COMM_WORLD
+    size = comm.Get_size()
+    rank = comm.Get_rank()
+    print(size, ':', rank)
+    tracemalloc.start()
+    start_init_time = time.time()
     S_cmb_name = 'data/New_S_cmb_n{}_s{}_r{:1}_b{:1.1e}'.format(nside, nsim, r_true, beta_true.value).replace(
         '.', 'p') + '.npy'
     print(S_cmb_name)
+
     data, model_data = data_and_model_quick(
         miscal_angles_array=true_miscal_angles, bir_angle=beta_true*0,
         frequencies_by_instrument_array=freq_by_instru, nside=nside,
         sky_model=sky_model, sensitiviy_mode=sensitiviy_mode,
         one_over_f_mode=one_over_f_mode, instrument=INSTRU, overwrite_freq=overwrite_freq)
     true_A_cmb = model_data.mix_effectiv[:, :2]
-
+    current, peak = tracemalloc.get_traced_memory()
+    print('rank = ', rank,
+          f"1Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
     # ddt_maps, fg_freq_maps, n_obspix = get_SFN_maps(
     #     data, model_data, path_BB, S_cmb_map_name, spectral_flag)
-    ddt, fg_freq_maps, n_obspix = get_SFN(
-        data, model_data, path_BB, S_cmb_name, spectral_flag)
+    if rank == 0:
+        ddt, fg_freq_maps, n_obspix = get_SFN(
+            data, model_data, path_BB, S_cmb_name, spectral_flag)
+
+        fg_ys = get_ys_alms(y_Q=fg_freq_maps[::2], y_U=fg_freq_maps[1::2], lmax=lmax)
+        reshape_fg_ys = fg_ys[:, 1:].reshape([12, 45451])
+    else:
+        reshape_fg_ys = None
+    reshape_fg_ys = comm.bcast(reshape_fg_ys, root=0)
+    if rank == 0:
+        print(rank)
+        print('reshape_fg_ys = ', reshape_fg_ys)
+    elif rank == 1:
+        print(rank)
+        print('reshape_fg_ys = ', reshape_fg_ys)
+    current, peak = tracemalloc.get_traced_memory()
+    print('rank = ', rank,
+          f" 2Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 
     miscal = 1*u.deg.to(u.rad)
     total_params = np.array([miscal, miscal, miscal, miscal, miscal, miscal,
@@ -493,7 +526,9 @@ def main():
     Cl_cmb_data[0, 1] = spectra_true[4]
     Cl_cmb_data_matrix = np.einsum('ij,jkl,km->iml', true_A_cmb,
                                    Cl_cmb_data, true_A_cmb.T)
-
+    current, peak = tracemalloc.get_traced_memory()
+    print('rank = ', rank,
+          f"3Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
     '''Sky model from spectral likelihood results'''
     model_skm = get_model(
         total_params[:6], bir_angle=beta_true*0,
@@ -501,11 +536,15 @@ def main():
         spectral_params=[total_params[6], 20, total_params[7]],
         sky_model='c1s0d0', sensitiviy_mode=sensitiviy_mode,
         one_over_f_mode=one_over_f_mode, instrument=INSTRU, overwrite_freq=overwrite_freq)
-
+    current, peak = tracemalloc.get_traced_memory()
+    print('rank = ', rank,
+          f"4Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
     # dd_fg = np.einsum('ip,jp->ijp', fg_freq_maps, fg_freq_maps)
-    fg_ys = get_ys_alms(y_Q=fg_freq_maps[::2], y_U=fg_freq_maps[1::2], lmax=lmax)
-    reshape_fg_ys = fg_ys[:, 1:].reshape([12, 45451])
-
+    # fg_ys = get_ys_alms(y_Q=fg_freq_maps[::2], y_U=fg_freq_maps[1::2], lmax=lmax)
+    # reshape_fg_ys = fg_ys[:, 1:].reshape([12, 45451])
+    current, peak = tracemalloc.get_traced_memory()
+    print('rank = ', rank,
+          f"5Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
     scatter = [prior_precision]*freq_number
     scatter.append(0.1)
     scatter.append(0.1)
@@ -514,36 +553,49 @@ def main():
     scatter = np.array(scatter)
     init_min = np.random.normal(total_params, scatter, 10)
 
-    IPython.embed()
-    cosmo_params_list = []
-    start = time.time()
-    spectral_cosmo_onthefly(init_min[:8], cosmo_params_list, ddt, model_skm,
-                            prior_matrix, prior_centre, Cl_cmb_data_matrix, reshape_fg_ys)
-    end = time.time()
-    print('time on the fly = ', end - start)
+    if machine == 'local':
+        path = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/full_pipeline/test_total_likelihood/'
+    elif machine == 'NERSC':
+        path = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/total_like/'
 
-    nsteps = 13000
-    discard = 5000
-    cosmo_params_list = []
+    if rank == 0:
+        if p.exists(path+'spec_only_samples_13k_oneprior_0p5log_fullnoise.npy'):
+            print('loading spectral samples...')
+            spec_samples = np.load(path+'spec_only_samples_13k_oneprior_0p5log_fullnoise.npy')
+        else:
+            print('generating spectral samples...')
 
-    init_MCMC = np.random.normal(
-        total_params[:8], scatter[:8], (2*8, 8))
-    nwalkers = 2 * 8
-    start = time.time()
-    sampler_spec = EnsembleSampler(
-        nwalkers, 8, spectral_sampling, args=[
-            ddt, model_skm, prior_matrix, prior_centre])
-    sampler_spec.reset()
-    start = time.time()
-    sampler_spec.run_mcmc(init_MCMC, nsteps, progress=True)
-    end = time.time()
-    print('time MCMC = ', end - start)
-    spec_samples_raw = sampler_spec.get_chain()
-    spec_samples = sampler_spec.get_chain(discard=discard, flat=True)
+            nsteps = 13000
+            discard = 5000
+            cosmo_params_list = []
 
-    path = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/full_pipeline/test_total_likelihood/'
-    np.save(path+'spec_only_samples.npy', spec_samples)
-    np.save(path+'spec_only_samples_raw.npy', spec_samples_raw)
+            init_MCMC = np.random.normal(
+                total_params[:8], scatter[:8], (2*8, 8))
+            nwalkers = 2 * 8
+            start = time.time()
+            sampler_spec = EnsembleSampler(
+                nwalkers, 8, spectral_sampling, args=[
+                    ddt, model_skm, prior_matrix, prior_centre])
+            sampler_spec.reset()
+            start = time.time()
+            sampler_spec.run_mcmc(init_MCMC, nsteps, progress=True)
+            end = time.time()
+            print('time MCMC = ', end - start)
+            spec_samples_raw = sampler_spec.get_chain()
+            spec_samples = sampler_spec.get_chain(discard=discard, flat=True)
+
+            np.save(path+'spec_only_samples_13k_oneprior_0p5log_fullnoise.npy', spec_samples)
+            np.save(path+'spec_only_samples_13k_raw_oneprior_0p5log_fullnoise.npy', spec_samples_raw)
+    current, peak = tracemalloc.get_traced_memory()
+    print('rank = ', rank,
+          f"6Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+    # cosmo_params_list = []
+    # start = time.time()
+    # spectral_cosmo_onthefly(init_min[:8], cosmo_params_list, ddt, model_skm,
+    #                         prior_matrix, prior_centre, Cl_cmb_data_matrix, reshape_fg_ys)
+    # end = time.time()
+    # print('time on the fly = ', end - start)
+    # exit()
     '''
     start = time.time()
     cosmo_params_list = []
@@ -565,15 +617,32 @@ def main():
     print('time min = ', end - start)
     print('time min iter = ', (end - start)/1000)
     '''
-
+    if rank == 0:
+        shape_array = np.array(spec_samples.shape)
+        print(shape_array, type(shape_array))
+    else:
+        shape_array = np.empty(2)
+    shape_array_bcast = comm.bcast(shape_array, root=0)
+    print(rank, ', shape array = ', shape_array_bcast)
+    sendbuf = None
+    if rank == 0:
+        sendbuf = copy.deepcopy(spec_samples.reshape(
+            [size, spec_samples.shape[0]//size, spec_samples.shape[1]]))
+    recvbuf = np.empty([shape_array_bcast[0]//size, shape_array_bcast[1]])
+    recvbuf = comm.scatter(sendbuf, root=0)
+    print(rank)
+    print(recvbuf)
+    end_init_time = time.time()
+    print('init time = ', end_init_time - start_init_time)
     start = time.time()
     cosmo_params_list = []
     cosmo_params_list_allwalkers = []
     step_counter = 0
-    for spectral_params in spec_samples[:1000]:
+    IPython.embed()
+    for spectral_params in recvbuf[:-50]:
         print('step = ', step_counter)
         Cl_noise_matrix, A, W = from_spectra_to_cosmo(
-            spectral_params, model_skm, sensitiviy_mode=1, one_over_f_mode=2, beam_corrected=False, one_over_ell=False)
+            spectral_params, model_skm, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode, beam_corrected=beam_correction, one_over_ell=one_over_ell)
 
         # init_min = np.random.normal([0, 0], [0.1, 0.1], 2)
         nsteps = 50
@@ -583,6 +652,10 @@ def main():
         except_counter = 0
         while success:
             try:
+                # np.random.seed(rank+except_counter*(size+10))
+                seed = rank*(shape_array_bcast[0]//size)*12+step_counter*12+except_counter*2
+                print('seed = ', seed)
+                np.random.seed(seed)
                 init_MCMC_cosmo = np.random.normal(
                     total_params[8:], scatter[8:], (nwalkers, 2))
                 # init_MCMC_cosmo = np.array([[r_true, beta_true.value]]*nwalkers)
@@ -592,7 +665,11 @@ def main():
                         Cl_cmb_data_matrix, reshape_fg_ys, Cl_fid, Cl_noise_matrix, W, A, False])
                 sampler_cosmo.reset()
                 # start = time.time()
-                sampler_cosmo.run_mcmc(init_MCMC_cosmo, nsteps, progress=True)
+                sampler_cosmo.run_mcmc(init_MCMC_cosmo, nsteps, progress=False)
+
+                cosmo_samples_raw = sampler_cosmo.get_chain()
+                cosmo_samples = sampler_cosmo.get_chain(discard=discard, flat=True)
+
                 success = False
                 # print('time MCMC = ', end - start)
             except ValueError:
@@ -600,22 +677,71 @@ def main():
                 print('except !')
                 print('except_counter =', except_counter)
                 if except_counter == 5:
+                    print('except threshold reached !')
+                    cosmo_samples = np.array([[np.nan, np.nan]])
+
                     success = False
-
-        cosmo_samples_raw = sampler_cosmo.get_chain()
-        cosmo_samples = sampler_cosmo.get_chain(discard=discard, flat=True)
-
         cosmo_params_list.append(cosmo_samples[0])
         cosmo_params_list_allwalkers.append(cosmo_samples)
         step_counter += 1
-    cosmo_params_list = np.array(cosmo_params_list)
-    cosmo_params_list_allwalkers = np.array(cosmo_params_list_allwalkers)
-    end = time.time()
 
+    cosmo_params_list = np.array(cosmo_params_list)
+
+    end = time.time()
     print('time min = ', end - start)
     print('time min iter = ', (end - start)/10)
+    # sendbuf = copy.deepcopy(cosmo_params_list)
+    cosmo_params_list_MPI = None
+    if rank == 0:
+        cosmo_params_list_MPI = np.empty(
+            [size, cosmo_params_list.shape[0], cosmo_params_list.shape[1]])
+    comm.Gather(cosmo_params_list, cosmo_params_list_MPI, root=0)
+    if rank == 0:
+        np.save(path+'cosmo_samples_MPI_m50_oneprior_0p5log_fullnoise.npy', cosmo_params_list_MPI)
+
+    cosmo_params_list_allwalkers = np.array(cosmo_params_list_allwalkers)
+
+    print('rank = ', rank,
+          f"7Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+
+    exit()
+
+    '''===============Gridding==============='''
+
+    spectral_params = total_params[:8]
+    Cl_noise_matrix, A, W = from_spectra_to_cosmo(
+        spectral_params, model_skm, sensitiviy_mode=sensitiviy_mode, one_over_f_mode=one_over_f_mode, beam_corrected=beam_correction, one_over_ell=one_over_ell)
+
+    r_range = np.linspace(0.01-4*0.0015, 0.01+4*0.0015, 100)
+    beta_range = np.linspace(0.004, 0.008, 100)
+
+    chi2_grid = []
+    for r in r_range:
+        for beta in beta_range:
+            chi2_grid.append(cosmo_sampling(
+                [r, beta], Cl_cmb_data_matrix, reshape_fg_ys, Cl_fid, Cl_noise_matrix, W, A, False))
+    chi2_grid = -np.array(chi2_grid)
+    chi2_mesh = np.reshape(chi2_grid, (-1, len(beta_range)))
+    like_mesh = np.exp((-chi2_mesh+np.min(chi2_mesh))/2)
+    betaxx, ryy = np.meshgrid(beta_range, r_range)
+
+    levels = np.arange(0, 1+1/8, 1/8)*np.max(like_mesh)
+
+    fig, ax = plt.subplots()
+    cs = ax.contourf(betaxx, ryy, like_mesh, levels=levels)
+
+    cbar = fig.colorbar(cs)
+    cbar.ax.set_xlabel(r'$\mathcal{L}$')
+    plt.ylabel(r'$r$')
+    plt.xlabel(r'Briefringence angle $\beta$ in radian')
+    # plt.title(r'Joint likelihood on $r$ and $\alpha$ with $r_{input} =$'+'{},'.format(r_true)+r' $\beta_{input}=$'+'{}'.format(
+    #     beta_true))
+    plt.savefig(path+'gridding_cosmo_test',  bbox_inches='tight')
+
+    '''
 
     np.save(path+'cosmo_only_samples.npy', cosmo_params_list)
+    IPython.embed()
 
     start = time.time()
     nsteps = 1000
@@ -698,7 +824,9 @@ def main():
     plt.title(title_index[i]+title_index[j])
     plt.show()
     # IPython.embed()
-    # '''
+    '''
+
+    '''
     miscal_grid = np.arange(1.52, 1.58, 0.06/100)
     miscal_grid = np.arange(0.34, 0.36, 0.02/100)*u.deg.to(u.rad)
     miscal_grid = np.arange(0.005, 0.02, 0.015/100)
@@ -770,7 +898,6 @@ def main():
     min_spectral = minimize(spectral_sampling, init_min,
                             args=(ddt, model_skm, prior_matrix, prior_centre, True))
     print('time min=', time.time()-start)
-    '''
 
     init_MCMC = np.random.normal(
         total_params, scatter, (2*10, 10))

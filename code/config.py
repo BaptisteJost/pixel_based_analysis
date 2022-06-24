@@ -9,7 +9,7 @@ from datetime import date
 
 
 '''Paths and machine'''
-machine = 'local'
+machine = 'NERSC'
 path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/run02032021/'
 path_local = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/MCMCrerun_article/'
 
@@ -28,14 +28,14 @@ else:
     print('ERROR : Machine not recognized')
     exit()
 
-save_path_ = pixel_path + 'results_and_data/full_pipeline/' + \
-    date.today().strftime('%Y%m%d') + '_constrained'
+save_path_ = pixel_path + 'results_and_data/total_like/' + \
+    date.today().strftime('%Y%m%d')
 
 
 '''Cosmology params'''
-r_true = 0.01
+r_true = 0.0
 r_str = '_r0p01'
-beta_true = (0.35 * u.deg).to(u.rad)
+beta_true = (0.0 * u.deg).to(u.rad)
 A_lens_true = 1
 
 test1freq = False
@@ -49,8 +49,11 @@ if INSTRU == 'SAT':
     lmax = 300
     # lmax = 1000
     nside = 512
+    add_noise = 0
     sensitiviy_mode = 1
     one_over_f_mode = 1
+    one_over_ell = True
+    beam_correction = True
     frequencies_plot = np.array([27,  39,  93, 145, 225, 280])
     overwrite_freq = None
 
@@ -74,8 +77,8 @@ freq_by_instru = [1]*freq_number
 '''Sky simulation params'''
 nsim = 1000
 sky_model = 'c1s0d0'
-# true_miscal_angles = (np.arange(1, 5, 4 / freq_number)*u.deg).to(u.rad)
-true_miscal_angles = (np.array([1]*freq_number)*u.deg).to(u.rad)
+true_miscal_angles = (np.arange(1, 5, 4 / freq_number)*u.deg).to(u.rad)
+# true_miscal_angles = (np.array([1]*freq_number)*u.deg).to(u.rad)
 
 
 '''Spectral likelihood minimisation params'''
@@ -119,7 +122,7 @@ if not prior_gridding:
             prior_indices = [0, 1]  # test1freq
     # prior_precision = (5*u.deg).to(u.rad).value
     # prior_precision = (0.1*u.deg).to(u.rad).value
-    prior_precision = (0.001*u.deg).to(u.rad).value
+    prior_precision = (5.00000000e+00*u.deg).to(u.rad).value
 
     angle_prior = []
     # np.random.normal(0, prior_precision, freq_number)
