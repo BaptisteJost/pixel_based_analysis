@@ -9,6 +9,7 @@ from getdist.gaussian_mixtures import GaussianND
 from getdist import plots, MCSamples
 import matplotlib.pyplot as plt
 from full_plots import plot_options
+from os.path import exists
 
 
 def main():
@@ -16,7 +17,7 @@ def main():
     parser.add_argument("folder_end", help="end of the folder name")
     args = parser.parse_args()
 
-    # save_path__ = save_path_.replace('06', '05')
+    # save_path__ = save_path_.replace('28', '27')
     save_path = save_path_ + args.folder_end + '/'
     print()
     print(save_path)
@@ -25,11 +26,7 @@ def main():
 
     plt.switch_backend("Qt5Agg")
 
-    cosmo_sample = np.load(save_path+'cosmo_samples.npy')
-    cosmo_sample[:, 1:] *= rad2deg
-
-    labels = [r'r', r'{\beta_b}', r'{\alpha_p}']
-    label_sample = 'Cosmological likelihood'
+    labels = [r'r', r'{\beta_b}', r'{\alpha^{\rm{ref}}}']
 
     markers = {}
     # pivot_angle_index = 2
@@ -44,9 +41,34 @@ def main():
     boundaries[labels[1]] = [-0.5*np.pi*rad2deg, 0.5*np.pi*rad2deg]
     boundaries[labels[2]] = [-0.5*np.pi*rad2deg, 0.5*np.pi*rad2deg]
 
-    distsamples = MCSamples(samples=cosmo_sample, names=labels,
-                            labels=labels, ranges=boundaries,
-                            label=label_sample)
+    options_dict = {}
+    options_dict['plot_samples'] = []
+    options_dict['filled'] = []
+
+    options_dict['legend_labels'] = []
+
+    options_dict['contour_lws'] = []
+    options_dict['contour_colors'] = []
+    options_dict['contour_ls'] = []
+
+    if exists(save_path+'cosmo_samples.npy'):
+        label_sample = 'Cosmological likelihood'
+        cosmo_sample = np.load(save_path+'cosmo_samples.npy')
+        cosmo_sample[:, 1:] *= rad2deg
+
+        distsamples = MCSamples(samples=cosmo_sample, names=labels,
+                                labels=labels, ranges=boundaries,
+                                label=label_sample)
+        distsamples.smooth_scale_2D = -1
+        distsamples.smooth_scale_1D = -1
+        options_dict['plot_samples'].append(distsamples)
+        options_dict['filled'].append(True)
+
+        options_dict['legend_labels'].append(label_sample)
+
+        options_dict['contour_lws'].append(1.5)
+        options_dict['contour_colors'].append('orange')
+        options_dict['contour_ls'].append('-')
     # IPython.embed()
     cosmo_fisher = np.load(save_path+'fisher_cosmo_prior_array.npy')[0]
     cosmo_estimation = np.load(save_path+'cosmo_array.npy')[0]
@@ -58,56 +80,76 @@ def main():
     cosmo_estimation[1:] *= rad2deg
     fisher = GaussianND(cosmo_estimation, cov_cosmo_deg, names=labels,
                         labels=labels)
+    options_dict['plot_samples'].append(fisher)
+    options_dict['filled'].append(False)
 
-    distsamples.smooth_scale_2D = -1
-    distsamples.smooth_scale_1D = -1
-    options_dict = {}
-    options_dict['plot_samples'] = [distsamples, fisher]
+    options_dict['legend_labels'].append('Fisher estimation')
+
+    options_dict['contour_lws'].append(2)
+    options_dict['contour_colors'].append('darkred')
+    options_dict['contour_ls'].append('-')
+
     options_dict['labels'] = labels
     options_dict['markers'] = markers
 
-    options_dict['filled'] = [True, False]
-
-    options_dict['legend_labels'] = [label_sample, 'Fisher estimation']
-
-    options_dict['contour_lws'] = [1.5, 2]
-    options_dict['contour_colors'] = ['orange', 'maroon']
-    options_dict['contour_ls'] = ['-', '--']
-
-    g = plot_options(options_dict, index_sigma=0)
+    g = plot_options(options_dict, index_sigma=0, title_limit=0)
     legend_args = {}
     legend_args['prop'] = {'size': 8}
     lines = g.contours_added
-    plot_pivot = 0
+    plot_pivot = 1
     if plot_pivot:
         pivot_range = np.load(save_path+'pivot_range.npy')
         prior_first_term = np.load(save_path+'prior_first_term.npy')
         prior_second_term = np.load(save_path+'prior_second_term.npy')
         g.subplots[2, 2].plot(pivot_range*rad2deg, prior_first_term,
-                              label='prior pivot', color='purple')
-        g.subplots[2, 2].plot(pivot_range*rad2deg, prior_second_term,
-                              label='prior second term', color='cyan')
-
-        lines.append(g.subplots[2, 2].lines[-2])
+                              label='Prior reference', color='darkorange', linestyle='--')
         lines.append(g.subplots[2, 2].lines[-1])
-        options_dict['legend_labels'].append('prior pivot')
-        options_dict['legend_labels'].append('prior second term')
+        options_dict['legend_labels'].append('Prior reference')
+
+        if not one_prior:
+            g.subplots[2, 2].plot(pivot_range*rad2deg, prior_second_term,
+                                  label='Prior second term', color='darkcyan', linestyle='--')
+            lines.append(g.subplots[2, 2].lines[-1])
+            options_dict['legend_labels'].append('Prior second term')
+
+    title_list = []
+    for i in range(len(labels)):
+        error_digits = 2
+        error_str_init = '{0:.'+str(error_digits)+'g}'
+        error_str = error_str_init.format(np.sqrt(cov_cosmo_deg[i, i]))
+        print('error str ', error_str)
+        error_len = len(error_str)
+        mean_str = '{0:.'+str(error_len-2)+'f}'
+        print('mean ', mean_str)
+        tot_str = ' = '+mean_str.format(cosmo_estimation[i])+'\\pm'+error_str
+        print('tot ', tot_str)
+        title_list.append('$'+labels[i] + tot_str+'$')
+        g.subplots[i, i].set_title(title_list[-1])
+    # '$r = 0.0016^{+0.0016}_{-0.0019}$',
+    # '${\\beta_b} = 0.002\\pm 0.070$',
+    # '$\\alpha_{93} = 2.331\\pm 0.050$'
+    # ], dtype='<U32')
+
     # lines.append(mlines.Line2D([], [], **g.lines_added[1]))
     #
+    legend_args = {}
+    legend_args['prop'] = {'size': 12}
     g.legend = g.fig.legend(
         lines, options_dict['legend_labels'], loc=g.settings.legend_loc, **legend_args)
-    IPython.embed()
+    # IPython.embed()
     plt.savefig(save_path+'cosmo_MCMC.png', bbox_inches='tight', dpi=200)
     plt.savefig(save_path+'cosmo_MCMC.pdf', bbox_inches='tight', dpi=200)
     plt.close()
 
+    '''========================================================================================================================='''
     '''Plot Fisher spectral results'''
     frequencies_plot_nopivot = np.delete(frequencies_plot, pivot_angle_index)
     labels = [r'\alpha_{{{}}}'.format(i) for i in frequencies_plot_nopivot]
     if spectral_flag:
         labels.append(r'\beta_d')
         labels.append(r'\beta_s')
-        true_params_ = np.append(np.delete(true_miscal_angles.value, pivot_angle_index), [1.54, -3])
+        true_params_ = np.append(np.delete(true_miscal_angles.value,
+                                           pivot_angle_index), [1.54, -3])
     markers = {}
     true_params = copy.deepcopy(true_params_)
     true_params[:5] *= rad2deg
@@ -157,20 +199,45 @@ def main():
 
     options_dict['legend_labels'].append('Fisher estimation')
     options_dict['contour_lws'].append(2)
-    options_dict['contour_colors'].append('maroon')
-    options_dict['contour_ls'].append('--')
-
+    options_dict['contour_colors'].append('darkred')
+    options_dict['contour_ls'].append('-')
+    # IPython.embed()
     g = plot_options(options_dict, index_sigma=0, title_limit=title_limit_spectral)
 
     legend_args = {}
     legend_args['prop'] = {'size': 20}
-    lines = g.contours_added[:-1]
+    lines = g.contours_added
     lines.append(mlines.Line2D([], [], **g.lines_added[0]))
     g.legend = g.fig.legend(
-        lines, options_dict['legend_labels'], loc=g.settings.legend_loc, **legend_args)
+        lines, options_dict['legend_labels'], loc='center right', **legend_args)
+
+    title_list = []
+    for i in range(len(labels)):
+        error_digits = 2
+        error_str_init = '{0:.'+str(error_digits)+'g}'
+        error_str = error_str_init.format(np.sqrt(cov_deg[i, i]))
+        print('error str ', error_str)
+        error_len = len(error_str)
+        mean_str = '{0:.'+str(error_len-2)+'f}'
+        print('mean ', mean_str)
+        tot_str = ' = '+mean_str.format(spectral_estimation[i])+'\\pm'+error_str
+        print('tot ', tot_str)
+        title_list.append('$'+labels[i] + tot_str+'$')
+        g.subplots[i, i].set_title(title_list[-1])
+
+    # title_array = np.array(['$\\alpha_{27} = 1.011\\pm 0.083$',
+    #                         '$\\alpha_{39} = 1.668\\pm 0.054$',
+    #                         '$\\alpha_{145} = 2.998\\pm 0.049$',
+    #                         '$\\alpha_{225} = 3.665\\pm 0.049$',
+    #                         '$\\alpha_{280} = 4.331\\pm 0.061$',
+    #                         '$\\beta_d = 1.3768\\pm 0.0072$',
+    #                         '$\\beta_s = -3.0462\\pm 0.0095$'])
+    # for i in range(len(title_array)):
+    #     print('a')
 
     plt.savefig(save_path+'spectral_MCMC.png', bbox_inches='tight', dpi=200)
     plt.savefig(save_path+'spectral_MCMC.pdf', bbox_inches='tight', dpi=200)
+    IPython.embed()
 
     exit()
 

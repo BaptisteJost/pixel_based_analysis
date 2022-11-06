@@ -18,6 +18,7 @@ from scipy.integrate import simps
 import bjlib.class_faraday as cf
 import emcee
 from fisher_pixel import fisher_new
+from scipy.linalg import block_diag
 
 
 def get_diff_list(model, params):
@@ -218,7 +219,8 @@ def get_ys_Cls(X_alms, Y_alms, lmax, fsky=1):
     return Cls / fsky
 
 
-def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spectra=None, true_A_cmb=None, pivot_angle_index=None, reshape_fg_ys=None):
+def get_residuals(model, fg_freq_maps, sigma, lmin, lmax, fsky, params, cmb_spectra=None,
+                  true_A_cmb=None, pivot_angle_index=None, reshape_fg_ys=None):
     '''============================computing Ws============================'''
     start_Ws = time.time()
     diff_list = get_diff_list(model, params)
@@ -912,10 +914,15 @@ def constrained_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb,
 
     r = cosmo_params[0]
     beta = cosmo_params[1]*u.rad
+    # beta = 0*u.rad
     pivot = cosmo_params[2]*u.rad
+    # pivot = true_miscal_angles[pivot_angle_index]
+    # print('ahhh', r, beta, pivot)
+    # import bjlib.lib_project as lib
 
     if not minimisation:
         if r > 5 or r < -0.01:
+            # if r > 5 or r < -1e-6:
             print('bla1')
             return -np.inf
         elif beta.value < -np.pi/2 or beta.value > np.pi/2:
@@ -956,15 +963,17 @@ def constrained_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb,
 
     tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_spectral, YY_cmb_matrix)
 
-    Cl_model_total_ = WACAW + Cl_noise_matrix + tr_SigmaYY + VACAW + WACAV
+    Cl_model_total_ = WACAW + tr_SigmaYY + VACAW + WACAV  # + Cl_noise_matrix
 
     rot_pivot = np.array([[np.cos(2*diff_pivot), -np.sin(2*diff_pivot)],
                           [np.sin(2*diff_pivot), np.cos(2*diff_pivot)]])
 
-    Cl_model_total = np.einsum('ij,jkl,km->iml', rot_pivot.T, Cl_model_total_, rot_pivot)
+    Cl_model_total = np.einsum('ij,jkl,km->iml', rot_pivot.T,
+                               Cl_model_total_, rot_pivot) + Cl_noise_matrix
     Cl_data_rot = Cl_data
 
-    inv_sigma_miscal = np.linalg.inv(sigma_spectral[:5, :5])
+    # removing spectral indices rows/columns
+    inv_sigma_miscal = np.linalg.inv(sigma_spectral[:-2, :-2])
     angle_relat = np.delete(eval_angles, pivot_angle_index)
     true_prior = np.delete(true_miscal_angles, pivot_angle_index).value
     # angle_relat_true = np.delete(true_miscal_angles, pivot_angle_index).value
@@ -974,7 +983,7 @@ def constrained_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb,
         np.delete(total_prior_matrix, pivot_angle_index, 0), pivot_angle_index, 1)[:-2, :-2]
     prior_element_pivot = total_prior_matrix[pivot_angle_index, pivot_angle_index]
     pivot = pivot.value
-
+    # print('prior matrix in function', prior_matrix)
     inv_model = np.linalg.inv(Cl_model_total.T).T
     dof = (2 * ell + 1) * fsky
     dof_over_Cl = dof * inv_model
@@ -997,10 +1006,16 @@ def constrained_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb,
         np.log(np.linalg.det(inv_sigma_miscal + prior_matrix)) + \
         true_prior.T.dot(prior_matrix).dot(true_prior)
     # radek_jost_prior +=
+
     first_term = np.sum(np.trace(first_term_ell))
 
-    logdetC = np.sum(dof*np.log(np.abs(np.linalg.det(Cl_model_total.T))))
-
+    # logdetC = np.sum(dof*np.log(np.abs(np.linalg.det(Cl_model_total.T))))
+    logdetC = np.sum(dof*np.log(np.linalg.det(Cl_model_total.T)))
+    # print('(pivot-pivot_true)', (pivot-pivot_true))
+    # print('A', A)
+    # print('radek_jost_prior=', radek_jost_prior)
+    # print('first_term', first_term)
+    # print('logdetC', logdetC)
     likelihood = first_term + logdetC + radek_jost_prior
     if not minimisation:
         return -likelihood/2
@@ -1043,6 +1058,27 @@ def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2, instrument
         noise_nl = np.array(noise_nl)
         noise_nl = np.repeat(noise_nl, 2, 0)
         # noise_nl = (noise_lvl*np.pi/60/180)**2 * ell_noise
+
+    elif instrument == 'LiteBIRD':
+        print('WARNING NO 1/F FOR NOW !! (get_noise_Cl)')
+        ell_noise = np.linspace(2, lmax-1, lmax-2, dtype=int)
+
+        instrument_LB = np.load('data/instrument_LB_IMOv1.npy', allow_pickle=True).item()
+
+        noise_lvl = np.array([instrument_LB[f]['P_sens'] for f in instrument_LB.keys()])
+        beam_rad = np.array([instrument_LB[f]['beam']
+                             for f in instrument_LB.keys()]) * u.arcmin.to(u.rad)
+        noise_nl = []
+        for f in range(len(noise_lvl)):
+            Bl = hp.gauss_beam(beam_rad[f], lmax=lmax-1)[2:]
+            noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(len(ell_noise))
+            noise_nl.append(noise / (Bl**2))
+        noise_nl = np.array(noise_nl)
+        noise_nl = np.repeat(noise_nl, 2, 0)
+
+    else:
+        print('Only SAT Planck and LiteBIRD supported for Cl_noise for now')
+
     nl_inv = 1/noise_nl
     AtNA = np.einsum('fi, fl, fj -> lij', A, nl_inv, A)
     inv_AtNA = np.linalg.inv(AtNA)
@@ -1169,14 +1205,29 @@ def sigma2_int(like_mesh, like_r, like_beta, param_grid, r_index, beta_index):
     return sigma2_r, sigma2_beta, sigma2_beta_r
 
 
-def multi_freq_get_sky_fg(sky, freq):
+def multi_freq_get_sky_fg(sky, freq, dust_angle=None, synch_angle=None):
     freq_maps = []
     import pysm
+
     for f in freq:
         dust_freq_maps = sky.dust(f) * \
             pysm.convert_units('K_RJ', 'K_CMB', f)
+        if dust_angle is not None:
+            rotation_block = np.array(
+                [[np.cos(2*dust_angle),  np.sin(2*dust_angle)],
+                 [-np.sin(2*dust_angle), np.cos(2*dust_angle)]
+                 ])
+            dust_freq_maps[1:] = rotation_block.dot(dust_freq_maps[1:])
+
         sync_freq_maps = sky.synchrotron(f) *\
             pysm.convert_units('K_RJ', 'K_CMB', f)
+        if synch_angle is not None:
+            rotation_block = np.array(
+                [[np.cos(2*synch_angle),  np.sin(2*synch_angle)],
+                 [-np.sin(2*synch_angle), np.cos(2*synch_angle)]
+                 ])
+            sync_freq_maps[1:] = rotation_block.dot(sync_freq_maps[1:])
+
         fg_f = dust_freq_maps + sync_freq_maps
         freq_maps.append(fg_f[1:])
     freq_maps_array = np.array(freq_maps)
@@ -1184,13 +1235,38 @@ def multi_freq_get_sky_fg(sky, freq):
     return np.reshape(freq_maps_array, (shape[0]*shape[1], shape[2]))
 
 
-def get_SFN(data, model_data, path_BB, S_cmb_name, spectral_flag=True, addnoise=1):
+def get_fg_polar_mixing(freq_number, fg_mixing_angle_input=0):
+    fg_mixing_angle = fg_mixing_angle_input * u.rad
+    fg_mixing_angle = fg_mixing_angle
+
+    rotation_block = np.array(
+        [[np.cos(2*fg_mixing_angle),  np.sin(2*fg_mixing_angle)],
+         [-np.sin(2*fg_mixing_angle), np.cos(2*fg_mixing_angle)]
+         ])
+    fg_rot_matrix = rotation_block
+
+    for f in range(freq_number-1):
+        fg_rot_matrix = block_diag(fg_rot_matrix, rotation_block)
+
+    return fg_rot_matrix
+
+
+def get_SFN(data, model_data, path_BB, S_cmb_name, spectral_flag=True, addnoise=1, fg_angle=None, dust_angle=None, synch_angle=None):
     S_cmb = np.load(S_cmb_name)
 
     ASAt = model_data.mix_effectiv[:, :2].dot(S_cmb).dot(model_data.mix_effectiv[:, :2].T)
 
     data.get_pysm_sky()
-    fg_freq_maps_full = data.miscal_matrix.dot(multi_freq_get_sky_fg(data.sky, data.frequencies))
+    if fg_angle is not None:
+        # IPython.embed()
+        print('angle pol fg = ', fg_angle, 'rad', fg_angle*u.rad.to(u.deg), 'deg')
+        fg_rot_matrix = get_fg_polar_mixing(len(data.frequencies), fg_angle)
+        fg_freq_maps_full = data.miscal_matrix.dot(fg_rot_matrix.dot(
+            multi_freq_get_sky_fg(data.sky, data.frequencies, dust_angle, synch_angle)))
+    else:
+        fg_freq_maps_full = data.miscal_matrix.dot(
+            multi_freq_get_sky_fg(data.sky, data.frequencies, dust_angle, synch_angle))
+
     ddt_fg = np.einsum('ik...,...kj->ijk', fg_freq_maps_full, fg_freq_maps_full.T)
     data.get_mask(path_BB)
     mask = data.mask

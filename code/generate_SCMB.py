@@ -26,16 +26,16 @@ def main():
     print(mpi_rank, size_mpi)
     root = 0
 
-    nside = 512
+    nside = 64
     nsim_cmb = 1000
 
-    r = 0.0
+    r = -0.01
     bire_angle = (0.0*u.deg).to(u.rad)
 
     A_lens = 1
     path_BB_local = '/home/baptiste/BBPipe'
     path_BB_NERSC = '/global/homes/j/jost/BBPipe'
-    path_BB = path_BB_NERSC
+    path_BB = path_BB_local
     # ps_planck = hp.read_cl(path_BB + '/test_mapbased_param/Cls_Planck2018_lensed_scalar.fits')
     print('test2')
 

@@ -9,7 +9,7 @@ from datetime import date
 
 
 '''Paths and machine'''
-machine = 'NERSC'
+machine = 'local'
 path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/run02032021/'
 path_local = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/MCMCrerun_article/'
 
@@ -28,12 +28,12 @@ else:
     print('ERROR : Machine not recognized')
     exit()
 
-save_path_ = pixel_path + 'results_and_data/full_pipeline/Method_comparaison/' + \
+save_path_ = pixel_path + 'results_and_data/full_pipeline/debug_LB/' + \
     date.today().strftime('%Y%m%d') + '_constrained_'
 
 
 '''Cosmology params'''
-r_true = 0.0
+r_true = 0.01
 r_str = '_r0p01'
 beta_true = (0.0 * u.deg).to(u.rad)
 A_lens_true = 1
@@ -41,7 +41,7 @@ A_lens_true = 1
 test1freq = False
 
 '''Instrument and noise'''
-INSTRU = 'SAT'
+INSTRU = 'LiteBIRD'
 if INSTRU == 'SAT':
     freq_number = 6
     fsky = 0.1
@@ -49,13 +49,14 @@ if INSTRU == 'SAT':
     lmax = 300
     # lmax = 1000
     nside = 512
-    add_noise = 0
+    add_noise = 1
     sensitiviy_mode = 1
     one_over_f_mode = 1
     one_over_ell = True
     beam_correction = True
     frequencies_plot = np.array([27,  39,  93, 145, 225, 280])
     overwrite_freq = None
+    pivot_angle_index = 2
 
     if test1freq:
         frequencies_plot = np.array([93])  # test1freq
@@ -68,6 +69,26 @@ elif INSTRU == 'Planck':
     lmin = 51
     lmax = 1500
     nside = 2048
+
+elif INSTRU == 'LiteBIRD':
+    freq_number = 22
+    fsky = 0.49
+    lmin = 2
+    lmax = 125
+    # lmax = 500
+    nside = 64
+    add_noise = 1
+    sensitiviy_mode = None
+    one_over_f_mode = None
+    one_over_ell = True
+    beam_correction = True
+    # frequencies_plot = np.array([27,  39,  93, 145, 225, 280])
+    frequencies_plot = np.array([40.,  50.,  60.,  68.,  68.,  78.,  78.,  89.,
+                                 89., 100., 119., 140., 100., 119., 140., 166.,
+                                 195., 195., 235., 280., 337., 402.])
+    overwrite_freq = None
+    pivot_angle_index = 9
+
 else:
     print('ERROR : instrument ', INSTRU, ' not supported yet.')
     exit()
@@ -79,6 +100,10 @@ nsim = 1000
 sky_model = 'c1s0d0'
 true_miscal_angles = (np.arange(1, 5, 4 / freq_number)*u.deg).to(u.rad)
 # true_miscal_angles = (np.array([1]*freq_number)*u.deg).to(u.rad)
+# fg_angle_config = None
+fg_angle_config = 0*u.deg.to(u.rad)
+dust_angle = 0*u.deg.to(u.rad)
+synch_angle = 0*u.deg.to(u.rad)
 
 
 '''Spectral likelihood minimisation params'''
@@ -103,7 +128,7 @@ initmodel_miscal = np.array([0]*freq_number)*u.rad
 angle_array_start = np.random.uniform(np.array(bounds)[:, 0],
                                       np.array(bounds)[:, 1])
 '''Prior information'''
-prior_gridding = True
+prior_gridding = False
 
 input_angles = copy.deepcopy(true_miscal_angles.value)  # + \
 
@@ -111,25 +136,31 @@ if not prior_gridding:
     prior_flag = True
     prior_indices = []
     if prior_flag:
-        pivot_angle_index = 2
-        one_prior = False
+        # pivot_angle_index = 2
+        one_prior = True
         if one_prior:
             prior_indices = [pivot_angle_index, pivot_angle_index+1]
         else:
-            prior_indices = [0, 6]
+            prior_indices = [0, freq_number]
 
         if test1freq:
             prior_indices = [0, 1]  # test1freq
     # prior_precision = (5*u.deg).to(u.rad).value
-    # prior_precision = (0.1*u.deg).to(u.rad).value
-    prior_precision = (5.00000000e+00*u.deg).to(u.rad).value
+    prior_precision = (0.1*u.deg).to(u.rad).value
+    # prior_precision = (5*u.deg).to(u.rad).value
 
     angle_prior = []
-    # np.random.normal(0, prior_precision, freq_number)
+    random_bias = False
+    if random_bias:
+        np.random.seed(1)
+        bias = np.random.normal(0, prior_precision, freq_number)
+        print('bias =', bias)
     if prior_flag:
         for d in range(freq_number):
             angle_prior.append([true_miscal_angles.value[d], prior_precision, int(d)])
         angle_prior = np.array(angle_prior[prior_indices[0]: prior_indices[-1]])
+        if random_bias:
+            angle_prior += bias
         # angle_prior[0, 0] += 5*prior_precision
         # angle_prior[2, 0] += prior_precision
     prior_matrix = np.zeros([len(params), len(params)])
