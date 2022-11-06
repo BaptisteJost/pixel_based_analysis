@@ -146,8 +146,9 @@ if not prior_gridding:
         if test1freq:
             prior_indices = [0, 1]  # test1freq
     # prior_precision = (5*u.deg).to(u.rad).value
-    prior_precision = (0.1*u.deg).to(u.rad).value
-    # prior_precision = (5*u.deg).to(u.rad).value
+    # prior_precision = (0.1*u.deg).to(u.rad).value
+    # prior_precision = (1.00000000e+00*u.deg).to(u.rad).value
+    prior_precision = (0.01*u.deg).to(u.rad).value
 
     angle_prior = []
     random_bias = False
@@ -168,6 +169,14 @@ if not prior_gridding:
         for i in range(prior_indices[0], prior_indices[-1]):
             prior_matrix[i, i] += 1/(prior_precision**2)
 
+biased_priors = True
+if biased_priors:
+    bias_values = (np.load(pixel_path+'code/data/bias_norm_1deg.npy')*u.deg).to(u.rad)
+    # big bias on one channel
+    # bias_values[pivot_angle_index] = (5*u.deg).to(u.rad)
+    # test for same bias on all channels
+    # bias_input = (np.load(pixel_path+'code/data/bias_norm_1deg.npy')*u.deg).to(u.rad)
+    # bias_values = np.array([bias_input[pivot_angle_index].value]*freq_number)*u.rad
 
 '''Fiducial spectra'''
 ps_planck = deepcopy(get_Cl_cmbBB(Alens=A_lens_true, r=r_true, path_BB=path_BB))
