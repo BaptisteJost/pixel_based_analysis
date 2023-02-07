@@ -9,7 +9,7 @@ from scipy.linalg import block_diag
 import matplotlib.pyplot as plt
 import healpy as hp
 import copy
-from mpi4py import MPI
+# from mpi4py import MPI
 
 # import emcee
 # from multiprocessing import Pool

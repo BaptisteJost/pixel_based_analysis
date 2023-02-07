@@ -27,7 +27,7 @@ def main():
     '''=========================Spec sample plot=========================='''
     spectral_sample_raw = np.load(save_path+'spec_samples.npy')
     spectral_sample = copy.deepcopy(spectral_sample_raw)
-    spectral_sample[:, :6] *= rad2deg
+    spectral_sample[:, :freq_number] *= rad2deg
 
     labels = [r'\alpha_{{{}}}'.format(i) for i in frequencies_plot]
     labels.append(r'\beta_d')
@@ -36,15 +36,15 @@ def main():
 
     markers = {}
     true_params = copy.deepcopy(true_params_)
-    true_params[:6] *= rad2deg
-    for i in range(8):
+    true_params[:freq_number] *= rad2deg
+    for i in range(freq_number+2):
         markers[labels[i]] = true_params[i]
 
     boundaries = {}
-    for i in range(6):
+    for i in range(freq_number):
         boundaries[labels[i]] = [-0.5*np.pi*rad2deg, 0.5*np.pi*rad2deg]
-    boundaries[labels[6]] = [1.4, 1.8]
-    boundaries[labels[7]] = [-3.5, -2.5]
+    boundaries[labels[freq_number]] = [1.4, 1.8]
+    boundaries[labels[freq_number+1]] = [-3.5, -2.5]
 
     label_sample = 'Generalised\nSpectral Likelihood'
     distsamples = MCSamples(samples=spectral_sample, names=labels, labels=labels,
@@ -65,7 +65,7 @@ def main():
     if prior_flag:
         gaussian_prior_sample, label_gauss = prior_samples(
             (prior_precision*u.rad).to(u.deg).value, prior_indices,
-            (angle_prior[:, 0]*u.rad).to(u.deg).value, options_dict)
+            (angle_prior[:, 0]*u.rad).to(u.deg).value, options_dict, param_number=freq_number+2)
         options_dict['contour_lws'][-1] = 1.5
 
     g = plot_options(options_dict, index_sigma=0)
@@ -80,7 +80,7 @@ def main():
         lines, options_dict['legend_labels'], loc='center right', **legend_args)
 
     title_array = []
-    for i in range(8):
+    for i in range(freq_number+2):
         title_array.append(g.subplots[i, i].title.get_text())
 
     plt.savefig(save_path+'spectral_MCMC.png', bbox_inches='tight', dpi=200)

@@ -14,7 +14,7 @@ import emcee
 import tracemalloc
 import os
 import sys
-from mpi4py import MPI
+# from mpi4py import MPI
 
 
 def get_chi_squared_local(angle_array, ddtPN, model_skm, prior=False,

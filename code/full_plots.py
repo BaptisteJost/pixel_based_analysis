@@ -10,17 +10,28 @@ from getdist import plots, MCSamples
 import matplotlib.pyplot as plt
 
 
-def prior_samples(prior_precision, prior_indices, distrib_centers, options_dict):
+def prior_samples(prior_precision, prior_indices, distrib_centers, options_dict, param_number=8):
     prior_num = prior_indices[-1]-prior_indices[0]
     prior_cov = np.zeros([prior_num, prior_num])
-    for i in range(prior_num):
-        prior_cov[i, i] = prior_precision**2
+    if type(prior_precision) == np.ndarray:
+        label_gauss = 'Gaussian priors precision : {} deg <'.format(
+            min(prior_precision)) + r' $\sigma_{\alpha_{i}}$'+' < {} deg'.format(max(prior_precision))
+        for i in range(prior_num):
+            prior_cov[i, i] = prior_precision[i]**2
+
+    elif type(prior_precision) == np.float64:
+        label_gauss = 'Gaussian priors precision : {} deg'.format(prior_precision)
+        for i in range(prior_num):
+            prior_cov[i, i] = prior_precision**2
+    else:
+        print('ERROR: in full_plots.prior_samples(), wrong format for prior_precision')
+        return None, None
 
     prior_samples_num = 100000
     samps_gauss_prior = np.random.multivariate_normal(
         distrib_centers, prior_cov, size=prior_samples_num)
 
-    sample_prior_none = np.zeros([8, prior_samples_num])
+    sample_prior_none = np.zeros([param_number, prior_samples_num])
     counter = 0
     for i in range(prior_indices[0], prior_indices[-1]):
         sample_prior_none[i] = samps_gauss_prior.T[counter]
@@ -32,7 +43,6 @@ def prior_samples(prior_precision, prior_indices, distrib_centers, options_dict)
     options_dict['plot_samples'].append(prior_none)
     options_dict['filled'].append(False)
     options_dict['contour_colors'].append('purple')
-    label_gauss = 'Gaussian priors precision : {} deg'.format(prior_precision)
     options_dict['legend_labels'].append(label_gauss)
     options_dict['contour_ls'].append('--')
     options_dict['contour_lws'].append(4)

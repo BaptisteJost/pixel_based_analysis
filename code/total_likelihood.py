@@ -25,7 +25,7 @@ from bjlib import V3calc as V3
 # from multiprocessing import Pool
 # from schwimmbad import MPIPool
 # import sys
-from mpi4py import MPI
+# from mpi4py import MPI
 from os import path as p
 import tracemalloc
 
@@ -65,7 +65,7 @@ def spectral_sampling(spectral_params, ddt, model_skm, total_prior_matrix, prior
         return (spectral_like - Prior)/2
 
 
-def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_f_mode, beam_corrected, one_over_ell):
+def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_f_mode, beam_corrected, one_over_ell, lmin=lmin, lmax=lmax, common_beam=None, scaling_factor=None, test_nobeam=False):
     angle_eval = spectral_params[:freq_number]*u.rad
     fg_params = spectral_params[freq_number:freq_number+2]
 
@@ -79,6 +79,7 @@ def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_
     W = get_W(model_skm)
     A = copy.deepcopy(model_skm.mix_effectiv)
 
+    '''
     V3_results = V3.so_V3_SA_noise(sensitiviy_mode, one_over_f_mode,
                                    SAC_yrs_LF=1, f_sky=fsky, ell_max=lmax+1, beam_corrected=beam_corrected)
     if one_over_ell:
@@ -89,6 +90,69 @@ def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_
     AtNA = np.einsum('fi, fl, fj -> lij', A, nl_inv, A)
     inv_AtNA = np.linalg.inv(AtNA)
     noise_cl = inv_AtNA.swapaxes(-3, -1)[..., lmin-2:]
+    '''
+    if INSTRU == 'SAT':
+        V3_results = V3.so_V3_SA_noise(sensitiviy_mode, one_over_f_mode,
+                                       SAC_yrs_LF=1, f_sky=fsky, ell_max=lmax+1, beam_corrected=True)
+        # noise_nl = np.repeat(V3_results[1], 2, 0)
+        if one_over_ell:
+            noise_nl = np.repeat(V3_results[1], 2, 0)[..., lmin-2:]
+        else:
+            noise_nl = np.repeat(V3_results[-1], 2, 0)[..., lmin-2:]
+
+        # ell_noise = V3_results[0]
+
+    elif INSTRU == 'Planck':
+        instru_planck = get_instrument('planck_P')
+        noise_lvl = instru_planck['sens_P']
+        beam_rad = (instru_planck['beams']*u.arcmin).to(u.rad).value
+        ell_noise = np.linspace(2, lmax, lmax-2, dtype=int)
+        noise_nl = []
+        from healpy import gauss_beam
+
+        for f in range(len(noise_lvl)):
+            Bl = hp.gauss_beam(beam_rad[f], lmax=lmax-1)[2:]
+            noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(len(ell_noise))
+            noise_nl.append(noise / (Bl**2))
+        noise_nl = np.array(noise_nl)
+        noise_nl = np.repeat(noise_nl, 2, 0)[..., lmin-2:]
+        # noise_nl = (noise_lvl*np.pi/60/180)**2 * ell_noise
+
+    elif INSTRU == 'LiteBIRD':
+        print('WARNING NO 1/F FOR NOW !! (get_noise_Cl)')
+        # TODO: noise lvl used should be taken from model_skm
+        ell_noise = np.linspace(lmin, lmax, lmax-lmin+1, dtype=int)
+
+        instrument_LB = np.load(
+            pixel_path+'code/data/instrument_LB_IMOv1.npy', allow_pickle=True).item()
+
+        noise_lvl = np.array([instrument_LB[f]['P_sens'] for f in instrument_LB.keys()])
+        if common_beam is not None:
+            noise_lvl /= scaling_factor
+            beam_rad = np.array([common_beam]*len(instrument_LB.keys())) * u.arcmin.to(u.rad)
+        else:
+            beam_rad = np.array([instrument_LB[f]['beam']
+                                 for f in instrument_LB.keys()]) * u.arcmin.to(u.rad)
+        noise_nl = []
+        from healpy import gauss_beam
+        for f in range(len(noise_lvl)):
+            Bl = gauss_beam(beam_rad[f], lmax=lmax)[lmin:]  # [2:]
+            if test_nobeam:
+                Bl = np.ones(Bl.shape)
+            noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(len(ell_noise))
+            noise_nl.append(noise / (Bl**2))
+        noise_nl = np.array(noise_nl)
+        # noise_nl = np.repeat(noise_nl, 2, 0)[..., lmin-2:]
+        noise_nl = np.repeat(noise_nl, 2, 0)  # [..., lmin:]
+
+    else:
+        print('Only SAT Planck and LiteBIRD supported for Cl_noise for now')
+
+    nl_inv = 1/noise_nl
+    AtNA = np.einsum('fi, fl, fj -> lij', A, nl_inv, A)
+    inv_AtNA = np.linalg.inv(AtNA)
+    noise_cl = inv_AtNA.swapaxes(-3, -1)
+
     Cl_noise = noise_cl[0, 0]
 
     Cl_noise_matrix = np.zeros([2, 2, Cl_noise.shape[0]])
@@ -103,8 +167,8 @@ def cosmo_sampling(cosmo_params, Cl_cmb_data_matrix, reshape_fg_ys, Cl_fid, Cl_n
     beta = cosmo_params[1]*u.rad
 
     if not minimisation:
-        if r > 5 or r < -0.01:
-            print('bla1')
+        if r > 5 or r < -1e-5:  # 0.01:
+            # print('bla1')
             return -np.inf
         elif beta.value < -np.pi/2 or beta.value > np.pi/2:
             print('bla2')

@@ -59,7 +59,8 @@ def main():
             data, model_data, path_BB, S_cmb_name, spectral_flag, addnoise=add_noise)
 
         fg_ys = get_ys_alms(y_Q=fg_freq_maps[::2], y_U=fg_freq_maps[1::2], lmax=lmax)
-        reshape_fg_ys = fg_ys[:, 1:].reshape([12, 45451])
+
+        reshape_fg_ys = fg_ys[:, 1:].reshape([2*freq_number, fg_ys.shape[-1]])
     else:
         reshape_fg_ys = None
     reshape_fg_ys = comm.bcast(reshape_fg_ys, root=0)
@@ -74,9 +75,11 @@ def main():
           f" 2Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 
     miscal = 1*u.deg.to(u.rad)
-    total_params = np.array([true_miscal_angles[0].value, true_miscal_angles[1].value,
-                             true_miscal_angles[2].value, true_miscal_angles[3].value,
-                             true_miscal_angles[4].value, true_miscal_angles[5].value,
+    # total_params = np.array([true_miscal_angles[0].value, true_miscal_angles[1].value,
+    #                          true_miscal_angles[2].value, true_miscal_angles[3].value,
+    #                          true_miscal_angles[4].value, true_miscal_angles[5].value,
+    #                          1.54, -3., r_true, beta_true.value])
+    total_params = np.append(true_miscal_angles.value.tolist(), [
                              1.54, -3., r_true, beta_true.value])
     prior_centre = true_miscal_angles.value
     # pivot_angle_index = 2
@@ -93,9 +96,9 @@ def main():
           f"3Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
     '''Sky model from spectral likelihood results'''
     model_skm = get_model(
-        total_params[:6], bir_angle=beta_true*0,
+        total_params[:freq_number], bir_angle=beta_true*0,
         frequencies_by_instrument_array=freq_by_instru, nside=nside,
-        spectral_params=[total_params[6], 20, total_params[7]],
+        spectral_params=[total_params[freq_number], 20, total_params[freq_number+1]],
         sky_model='c1s0d0', sensitiviy_mode=sensitiviy_mode,
         one_over_f_mode=one_over_f_mode, instrument=INSTRU, overwrite_freq=overwrite_freq)
     current, peak = tracemalloc.get_traced_memory()
@@ -111,7 +114,7 @@ def main():
     scatter.append(0.001)
     scatter.append(prior_precision)
     scatter = np.array(scatter)
-    init_min = np.random.normal(total_params, scatter, 10)
+    # init_min = np.random.normal(total_params, scatter, 10)
 
     if rank == 0:
         spec_samples = np.load(save_path+'spec_samples.npy')
@@ -155,12 +158,13 @@ def main():
         except_counter = 0
         while success:
             try:
-                seed = rank*(shape_array_bcast[0]//size)*12+step_counter*12+except_counter*2
+                seed = rank*(shape_array_bcast[0]//size)*(freq_number*2) + \
+                    step_counter*(freq_number*2)+except_counter*2
                 print('seed = ', seed)
                 np.random.seed(seed)
+                spec_param_number = freq_number + 2
                 init_MCMC_cosmo = np.random.normal(
-                    total_params[8:], scatter[8:], (nwalkers, 2))
-
+                    total_params[spec_param_number:], scatter[spec_param_number:], (nwalkers, 2))
                 sampler_cosmo = EnsembleSampler(
                     nwalkers, 2, cosmo_sampling, args=[
                         Cl_cmb_data_matrix, reshape_fg_ys, Cl_fid, add_noise*Cl_noise_matrix, W, A, False])

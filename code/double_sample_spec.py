@@ -58,17 +58,19 @@ def main():
     ddt, fg_freq_maps, n_obspix = get_SFN(
         data, model_data, path_BB, S_cmb_name, spectral_flag, addnoise=add_noise)
 
-    fg_ys = get_ys_alms(y_Q=fg_freq_maps[::2], y_U=fg_freq_maps[1::2], lmax=lmax)
-    reshape_fg_ys = fg_ys[:, 1:].reshape([12, 45451])
+    # fg_ys = get_ys_alms(y_Q=fg_freq_maps[::2], y_U=fg_freq_maps[1::2], lmax=lmax)
+    # reshape_fg_ys = fg_ys[:, 1:].reshape([12, 45451])
 
     current, peak = tracemalloc.get_traced_memory()
     print('rank = ', rank,
           f" 2Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 
     miscal = 1*u.deg.to(u.rad)
-    total_params = np.array([true_miscal_angles[0].value, true_miscal_angles[1].value,
-                             true_miscal_angles[2].value, true_miscal_angles[3].value,
-                             true_miscal_angles[4].value, true_miscal_angles[5].value,
+    # total_params = np.array([true_miscal_angles[0].value, true_miscal_angles[1].value,
+    #                          true_miscal_angles[2].value, true_miscal_angles[3].value,
+    #                          true_miscal_angles[4].value, true_miscal_angles[5].value,
+    #                          1.54, -3., r_true, beta_true.value])
+    total_params = np.append(true_miscal_angles.value.tolist(), [
                              1.54, -3., r_true, beta_true.value])
     prior_centre = true_miscal_angles.value
     pivot_angle_index = 2
@@ -85,9 +87,9 @@ def main():
           f"3Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
     '''Sky model from spectral likelihood results'''
     model_skm = get_model(
-        total_params[:6], bir_angle=beta_true*0,
+        total_params[:freq_number], bir_angle=beta_true*0,
         frequencies_by_instrument_array=freq_by_instru, nside=nside,
-        spectral_params=[total_params[6], 20, total_params[7]],
+        spectral_params=[total_params[freq_number], 20, total_params[freq_number+1]],
         sky_model='c1s0d0', sensitiviy_mode=sensitiviy_mode,
         one_over_f_mode=one_over_f_mode, instrument=INSTRU, overwrite_freq=overwrite_freq)
     current, peak = tracemalloc.get_traced_memory()
@@ -98,12 +100,12 @@ def main():
     print('rank = ', rank,
           f"5Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
     scatter = [prior_precision]*freq_number
-    scatter.append(0.1)
-    scatter.append(0.1)
-    scatter.append(0.01)
-    scatter.append(prior_precision)
+    scatter.append(0.1)  # first spectral index
+    scatter.append(0.1)  # first spectral index
+    scatter.append(0.01)  # ??
+    scatter.append(prior_precision)  # ??
     scatter = np.array(scatter)
-    init_min = np.random.normal(total_params, scatter, 10)
+    # init_min = np.random.normal(total_params, scatter, 10)
 
     # if machine == 'local':
     #     path = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/full_pipeline/test_total_likelihood/'
@@ -120,13 +122,13 @@ def main():
             nsteps = nsteps_spectral
             discard = discard_spectral
             cosmo_params_list = []
-
+            param_number = freq_number + 2  # num of msical + spectral index
             init_MCMC = np.random.normal(
-                total_params[:8], scatter[:8], (2*8, 8))
-            nwalkers = 2 * 8
+                total_params[:param_number], scatter[:param_number], (2*param_number, param_number))
+            nwalkers = 2 * param_number
             start = time.time()
             sampler_spec = EnsembleSampler(
-                nwalkers, 8, spectral_sampling, args=[
+                nwalkers, param_number, spectral_sampling, args=[
                     ddt, model_skm, prior_matrix, prior_centre])
             sampler_spec.reset()
             start = time.time()
