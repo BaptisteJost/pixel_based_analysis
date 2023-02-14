@@ -9,7 +9,7 @@ from datetime import date
 
 
 '''Paths and machine'''
-machine = 'NERSC'
+machine = 'local'
 path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/run02032021/'
 path_local = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/MCMCrerun_article/'
 

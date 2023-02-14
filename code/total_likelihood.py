@@ -1,4 +1,4 @@
-from config import *
+# from config import *
 import IPython
 from astropy import units as u
 # import argparse

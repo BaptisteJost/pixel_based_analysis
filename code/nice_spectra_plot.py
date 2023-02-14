@@ -113,6 +113,9 @@ ax[0].plot(ell, ell*(ell+1) * Cl_fid['EE']/(2*np.pi), linewidth=3,
 ax[1].plot(ell, ell*(ell+1) * copy.deepcopy(Cl_fid['BuBu']) * r_true/(2*np.pi),
            linewidth=3,
            color='black', label=r'Primordial B modes, $r=0.01$')
+ax[1].plot(ell, ell*(ell+1) * copy.deepcopy(Cl_fid['BuBu']) * 0.001/(2*np.pi),
+           linewidth=3, linestyle='dashdot',
+           color='black', label=r'Primordial B modes, $r=0.001$')
 ax[1].plot(ell, ell*(ell+1) * Cl_cmb_rot[2]/(2*np.pi), linewidth=3, color='purple')
 ax[2].plot(ell, ell*(ell+1) * np.abs(Cl_cmb_rot[4]) /
            (2*np.pi), linewidth=3, color='purple')
@@ -124,6 +127,7 @@ cbar = plt.colorbar(cmap)
 cbar.set_label('rotation angle in degrees', fontsize=25)
 cbar.ax.tick_params(labelsize=20)
 
+plot_fg = 0
 if plot_fg:
     alpha_fg = 0.8
     w_fg = 2
@@ -179,13 +183,15 @@ ax[0].set_ylabel(
 artist_EE, label_EE = ax[0].get_legend_handles_labels()
 artist_BB, label_BB = ax[1].get_legend_handles_labels()
 artist_EE.append(artist_BB[0])
+artist_EE.append(artist_BB[1])
 label_EE.append(label_BB[0])
+label_EE.append(label_BB[1])
 ax[0].legend(artist_EE, label_EE, fontsize=15, loc='upper left')
 
 
 plt.subplots_adjust(wspace=0.08)
-plt.savefig('birefringence_spectra_fg_3panelsV3.pdf', dpi=200)  # , bbox_inches='tight')
-plt.savefig('birefringence_spectra_fg_3panelsV3.png', dpi=200)  # , bbox_inches='tight')
+plt.savefig('birefringence_spectra_defense.pdf', dpi=200)  # , bbox_inches='tight')
+plt.savefig('birefringence_spectra_defense.png', dpi=200)  # , bbox_inches='tight')
 plt.show()
 # IPython.embed()
 

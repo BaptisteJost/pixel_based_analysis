@@ -16,7 +16,7 @@ A_lens = 1
 
 path_BB_local = '/home/baptiste/BBPipe'
 path_BB_NERSC = '/global/homes/j/jost/BBPipe'
-path_BB = path_BB_NERSC
+path_BB = path_BB_local
 # ps_planck = hp.read_cl(path_BB + '/test_mapbased_param/Cls_Planck2018_lensed_scalar.fits')
 print('test2')
 
@@ -50,8 +50,10 @@ noise_nl = []
 for f in range(len(noise_lvl)):
     Bl = hp.gauss_beam(beam_rad[f], lmax=lmax-1)[2:]
     Bl = np.ones(Bl.shape)
-    noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(len(ell_noise))
-    noise_nl.append(noise / (Bl**2))
+    # noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(len(ell_noise))
+    noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(3*nside)
+    # noise_nl.append(noise / (Bl**2))
+    noise_nl.append(noise)
 noise_nl = np.array(noise_nl)
 
 for i in range(99):
