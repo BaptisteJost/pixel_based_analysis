@@ -241,16 +241,17 @@ def main():
         print('================================================')
         print("RANK = ", rank)
         start = time.time()
-        output_dir = pixel_path + 'results_and_data/pipeline_data/phase' + \
-            str(phase)+'/'+str(rank).zfill(4) + '/'
-        output_dir = pixel_path+'results_and_data/pipeline_data/test_mock/' + \
-            str(rank).zfill(4) + '_fullsky_nobeam/'
+        if machine == 'local' or machine == 'NERSC':
+            output_dir = pixel_path + 'results_and_data/pipeline_data/phase' + str(phase)+'/'+str(rank).zfill(4) + '/'
+            output_dir = pixel_path+'results_and_data/pipeline_data/test_mock/' + str(rank).zfill(4) + '_fullsky_nobeam/'
+        elif machine == 'idark':
+            output_dir =  '/home/jost/results/mock_LB_fullsky_nobeam/' + str(rank).zfill(4) + '/' 
         print('rank=', rank)
         print('output_dir = ', output_dir)
         if not os.path.exists(output_dir):
             os.mkdir(output_dir)
 
-        # output_dir = '/project/projectdirs/litebird/results/birefringence_project_paper/compsep_maps_fgbuster/Phase4/'+str(rank).zfill(4)
+        # autput_dir = '/project/projectdirs/litebird/results/birefringence_project_paper/compsep_maps_fgbuster/Phase4/'+str(rank).zfill(4)
 
         # instrument = np.load(
         #     '/global/cfs/cdirs/litebird/simulations/maps/PTEP_20201014_d0s0/instrument_LB_IMOv1.npy', allow_pickle=True).item()
@@ -310,8 +311,14 @@ def main():
         scaling_factor_for_sensitivity_due_to_transfer_function = np.array([1]*22)
 
         # path_data = pixel_path+'code/'+'mock_LB_test_freq_maps.npy'
-        path_data = pixel_path+'results_and_data/pipeline_data/test_mock/data/mock_LB_nobeam' + \
-            str(rank).zfill(4)+'.npy'
+	if machine == 'local' or machine == 'NERSC':
+            path_data = pixel_path+'results_and_data/pipeline_data/test_mock/data/mock_LB_nobeam' + \
+                str(rank).zfill(4)+'.npy'
+	elif machine == 'idark':
+	    path_data = '/home/jost/simu/LB_mock/fullsky_nobeam/mock_LB_nobeam' + \
+                str(rank).zfill(4)+'.npy'
+	else:
+	    print('ERROR: path_data not specified for this machine')
         print('path data = ', path_data)
         data = np.load(path_data)
         freq_maps = data*mask

@@ -7,16 +7,24 @@ from bjlib.lib_project import cl_rotation
 from pixel_based_angle_estimation import data_and_model_quick
 from residuals import multi_freq_get_sky_fg
 import IPython
+#from config_pipeline_copy import *
 
 nside = 64
-
+print('NSIDE=',nside)
 r = 0.0
 bire_angle = (0.0*u.deg).to(u.rad)
 A_lens = 1
 
-path_BB_local = '/home/baptiste/BBPipe'
-path_BB_NERSC = '/global/homes/j/jost/BBPipe'
-path_BB = path_BB_local
+machine = 'idark'
+if machine =='local':
+    path_BB_local = '/home/baptiste/BBPipe'
+elif machine=='NERSC':
+    path_BB_NERSC = '/global/homes/j/jost/BBPipe'
+elif machine=='idark':
+    path_BB_idark = '/home/jost/code/BBPipe'
+else:
+    print(machine, ' doesn\'t have BBPipe path specified')
+path_BB = path_BB_idark
 # ps_planck = hp.read_cl(path_BB + '/test_mapbased_param/Cls_Planck2018_lensed_scalar.fits')
 print('test2')
 
@@ -56,6 +64,13 @@ for f in range(len(noise_lvl)):
     noise_nl.append(noise)
 noise_nl = np.array(noise_nl)
 
+if machine=='idark':
+    output_dir = '/home/jost/simu/LB_mock/fullsky_nobeam/'
+elif machine=='NERSC':
+    output_dir = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/pipeline_data/test_mock/data/'
+else:
+    print(machine,' doesn\'t have a specified output directory ')
+
 for i in range(99):
     map_CMB = hp.synfast(cmb_spectra, nside, new=True)[1:]
 
@@ -68,5 +83,8 @@ for i in range(99):
         freq_maps.append(map_f[1])
 
     freq_maps = np.array(freq_maps)
-    np.save('/global/homes/j/jost/these/pixel_based_analysis/results_and_data/pipeline_data/test_mock/data/mock_LB_nobeam' +
+    #np.save('/global/homes/j/jost/these/pixel_based_analysis/results_and_data/pipeline_data/test_mock/data/mock_LB_nobeam' +
+    #        str(i).zfill(4)+'.npy', freq_maps)
+
+    np.save(output_dir + 'mock_LB_nobeam' +
             str(i).zfill(4)+'.npy', freq_maps)
