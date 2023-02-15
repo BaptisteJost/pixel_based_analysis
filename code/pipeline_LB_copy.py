@@ -234,12 +234,15 @@ def main():
 
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
-    rank = comm.rank  # rank=0
+    rank_mpi = comm.rank  # rank=0
     # rank = 0
+    print('MPI size = ', size)
+    print('MPI rank = ', rank_mpi)
     phase = 1
-    for rank in range(1):
+    for map_iter in range(3):
+        rank = 3*rank_mpi + map_iter       
         print('================================================')
-        print("RANK = ", rank)
+        print("MAP NUMBER = ", rank)
         start = time.time()
         if machine == 'local' or machine == 'NERSC':
             output_dir = pixel_path + 'results_and_data/pipeline_data/phase' + \
@@ -405,10 +408,11 @@ def main():
                                                       one_over_f_mode=one_over_f_mode,
                                                       beam_corrected=beam_correction,
                                                       one_over_ell=one_over_ell,
-                                                      lmin=2, lmax=3*nside+1,
+                                                      lmin=0, lmax=3*nside-1,
                                                       common_beam=common_beam,
                                                       scaling_factor=scaling_factor_for_sensitivity_due_to_transfer_function,
-                                                      test_nobeam=test_nobeam)
+                                                      test_nobeam=test_nobeam,INSTRU=INSTRU)
+        '''in from_spectra_to_cosmo() lmin=0 and lmax=3*nside so that bin_cell has the right ell range as input, indeed it expects those value. bin_cell is so initialised that it then takes care of having the desired lmin. Not necessarily the lmax as we typically set lmax < 3*nside but it is taken care of with indices_ellrange later on.'''
     # 3*nside-1,
         # ell_noise = np.linspace(0, 3*nside-1, 3*nside, dtype=int)
 
@@ -598,7 +602,7 @@ def main():
         plt.loglog()
         plt.ylabel(r'$\frac{\ell (\ell+1)}{2\pi} C_\ell^{EE}$')
         plt.xlabel(r'$\ell$')
-        plt.savefig(output_dir+'EE_spectra.png')
+        plt.savefig(output_dir+'EE_spectra.png', bbox_inches='tight')
         plt.close()
 
         plt.plot(ell_eff[ell_index_min_plot:], norm*Cl_cmb_rot_BB[ell_index_min_plot:] +
@@ -613,7 +617,7 @@ def main():
         plt.loglog()
         plt.ylabel(r'$\frac{\ell (\ell+1)}{2\pi} C_\ell^{BB}$')
         plt.xlabel(r'$\ell$')
-        plt.savefig(output_dir+'BB_spectra.png')
+        plt.savefig(output_dir+'BB_spectra.png', bbox_inches='tight')
         plt.close()
 
         plt.plot(ell_eff[ell_index_min_plot:], norm *
@@ -627,12 +631,12 @@ def main():
         plt.xscale('log')
         plt.ylabel(r'$\frac{\ell (\ell+1)}{2\pi} C_\ell^{EB}$')
         plt.xlabel(r'$\ell$')
-        plt.savefig(output_dir+'EB_spectra.png')
+        plt.savefig(output_dir+'EB_spectra.png', bbox_inches='tight')
         plt.close()
         print('time plot = ', time.time() - time_plot)
         print('')
         print('time one map = ', time.time() - start)
-        IPython.embed()
+        
     exit()
 
     '''

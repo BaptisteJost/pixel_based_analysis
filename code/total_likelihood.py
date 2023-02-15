@@ -13,7 +13,7 @@ import copy
 import time
 from residuals import get_ys_alms
 from emcee import EnsembleSampler
-from config import *
+#from config import *
 import shutil
 import bjlib.lib_project as lib
 from residuals import get_SFN, get_diff_list, get_diff_diff_list,\
@@ -31,6 +31,7 @@ import tracemalloc
 
 
 def spectral_sampling(spectral_params, ddt, model_skm, total_prior_matrix, prior_centre, minimisation=False):
+    freq_number = model_skm.frequencies.shape[0]
     angle_eval = spectral_params[:freq_number]*u.rad
     fg_params = spectral_params[freq_number:freq_number+2]
 
@@ -65,7 +66,8 @@ def spectral_sampling(spectral_params, ddt, model_skm, total_prior_matrix, prior
         return (spectral_like - Prior)/2
 
 
-def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_f_mode, beam_corrected, one_over_ell, lmin=lmin, lmax=lmax, common_beam=None, scaling_factor=None, test_nobeam=False):
+def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_f_mode, beam_corrected, one_over_ell, lmin, lmax, common_beam=None, scaling_factor=None, test_nobeam=False, INSTRU= 'LiteBIRD'):
+    freq_number = model_skm.frequencies.shape[0]
     angle_eval = spectral_params[:freq_number]*u.rad
     fg_params = spectral_params[freq_number:freq_number+2]
 
@@ -123,8 +125,21 @@ def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_
         # TODO: noise lvl used should be taken from model_skm
         ell_noise = np.linspace(lmin, lmax, lmax-lmin+1, dtype=int)
 
-        instrument_LB = np.load(
-            pixel_path+'code/data/instrument_LB_IMOv1.npy', allow_pickle=True).item()
+        pixel_path_NERSC = '/global/u2/j/jost/these/pixel_based_analysis/code/'
+        pixel_path_local = '/home/baptiste/Documents/these/pixel_based_analysis/'
+        pixel_path_idark = '/home/jost/code/pixel_based_analysis/'
+        if p.exists(pixel_path_NERSC):
+            instrument_LB = np.load(pixel_path_NERSC+'data/instrument_LB_IMOv1.npy',
+                                    allow_pickle=True).item()
+        elif p.exists(pixel_path_local):
+            instrument_LB = np.load(pixel_path_local+'code/data/instrument_LB_IMOv1.npy',
+                                    allow_pickle=True).item()
+        elif p.exists(pixel_path_idark):
+            instrument_LB = np.load(pixel_path_idark+'code/data/instrument_LB_IMOv1.npy',
+                                    allow_pickle=True).item()
+        else:
+            print('ERROR in likelihood_SO.get_frequency(): pixel path not specified for this machine ')
+        # instrument_LB = np.load(pixel_path+'code/data/instrument_LB_IMOv1.npy', allow_pickle=True).item()
 
         noise_lvl = np.array([instrument_LB[f]['P_sens'] for f in instrument_LB.keys()])
         if common_beam is not None:
