@@ -15,7 +15,7 @@ r = 0.0
 bire_angle = (0.0*u.deg).to(u.rad)
 A_lens = 1
 
-machine = 'local'
+machine = 'idark'
 if machine == 'local':
     path_BB = '/home/baptiste/BBPipe'
 elif machine == 'NERSC':
