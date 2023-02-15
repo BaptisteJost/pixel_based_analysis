@@ -239,8 +239,8 @@ def main():
     print('MPI size = ', size)
     print('MPI rank = ', rank_mpi)
     phase = 1
-    for map_iter in range(3):
-        rank = 3*rank_mpi + map_iter       
+    for map_iter in range(1):
+        rank = 3*rank_mpi + map_iter
         print('================================================')
         print("MAP NUMBER = ", rank)
         start = time.time()
@@ -250,7 +250,7 @@ def main():
             output_dir = pixel_path+'results_and_data/pipeline_data/test_mock/' + \
                 str(rank).zfill(4) + '_fullsky_nobeam/'
         elif machine == 'idark':
-            output_dir = '/home/jost/results/mock_LB_fullsky_nobeam/' + str(rank).zfill(4) + '/'
+            output_dir = '/home/jost/results/mock_LB_fullsky_withbeam/' + str(rank).zfill(4) + '/'
         print('rank=', rank)
         print('output_dir = ', output_dir)
         if not os.path.exists(output_dir):
@@ -310,17 +310,19 @@ def main():
                                                                             1.83405669, 1.99590729, 1.87252192, 2.02839885, 2.06834379, 2.09336487,
                                                                             1.93022977, 1.98931453, 2.02184001, 2.0436672,  2.05440473, 2.04784698,
                                                                             2.08458758, 2.10468234, 2.1148482, 2.13539999])
-        print('WARNING: NO BEAM TEST')
-        common_beam = None
-        test_nobeam = True
-        scaling_factor_for_sensitivity_due_to_transfer_function = np.array([1]*22)
+        # print('WARNING: NO BEAM TEST')
+        # common_beam = None
+        test_nobeam = False
+        # scaling_factor_for_sensitivity_due_to_transfer_function = np.array([1]*22)
 
         # path_data = pixel_path+'code/'+'mock_LB_test_freq_maps.npy'
         if machine == 'local' or machine == 'NERSC':
             path_data = pixel_path+'results_and_data/pipeline_data/test_mock/data/mock_LB_nobeam' + \
                 str(rank).zfill(4)+'.npy'
         elif machine == 'idark':
-            path_data = '/home/jost/simu/LB_mock/fullsky_nobeam/mock_LB_nobeam' + \
+            # path_data = '/home/jost/simu/LB_mock/fullsky_nobeam/mock_LB_nobeam' + \
+            #     str(rank).zfill(4)+'.npy'
+            path_data = '/home/jost/simu/LB_mock/fullsky_nobeam/mock_LB_withbeam' + \
                 str(rank).zfill(4)+'.npy'
         else:
             print('ERROR: path_data not specified for this machine')
@@ -411,7 +413,7 @@ def main():
                                                       lmin=0, lmax=3*nside-1,
                                                       common_beam=common_beam,
                                                       scaling_factor=scaling_factor_for_sensitivity_due_to_transfer_function,
-                                                      test_nobeam=test_nobeam,INSTRU=INSTRU)
+                                                      test_nobeam=test_nobeam, INSTRU=INSTRU)
         '''in from_spectra_to_cosmo() lmin=0 and lmax=3*nside so that bin_cell has the right ell range as input, indeed it expects those value. bin_cell is so initialised that it then takes care of having the desired lmin. Not necessarily the lmax as we typically set lmax < 3*nside but it is taken care of with indices_ellrange later on.'''
     # 3*nside-1,
         # ell_noise = np.linspace(0, 3*nside-1, 3*nside, dtype=int)
@@ -458,8 +460,8 @@ def main():
             print('WARNING: if PARTIAL sky, purify_b should be TRUE')
         # common_beam = 80.0
         # common_beam = 80
-        # Bl_eff = hp.gauss_beam(np.radians(common_beam/60.0), lmax=3*nside)
-        Bl_eff = np.ones(3*nside + 1)
+        Bl_eff = hp.gauss_beam(np.radians(common_beam/60.0), lmax=3*nside+1)
+        # Bl_eff = np.ones(3*nside + 1)
 
         w = nmt.NmtWorkspace()
         b = binning_definition(nside, lmin=lmin, lmax=lmax, fsky=fsky)
@@ -636,7 +638,7 @@ def main():
         print('time plot = ', time.time() - time_plot)
         print('')
         print('time one map = ', time.time() - start)
-        
+
     exit()
 
     '''
