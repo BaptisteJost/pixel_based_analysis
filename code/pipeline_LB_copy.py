@@ -212,19 +212,24 @@ def import_and_smooth_data(instrument, rank, common_beam=None, phase=1, path=Non
                                   str(rank).zfill(4)+'/'+freq_tag+'_comb_d1s1_white_noise_CMB_polangle.fits', field=(0, 1, 2))
         elif phase == None:
             print('importing mock data, frequency channel #', f)
-            tot_map_ = np.load(path)[2*f:2*f+1]
-            tot_map = np.array([np.zeros(tot_map_.sahpe[1]), tot_map_[0], tot_map_[1]])
+            tot_map_ = np.load(path)[2*f:2*f+2]
+            # IPython.embed()
+            tot_map = np.array([np.zeros(tot_map_.shape[1]), tot_map_[0], tot_map_[1]])
             f += 1
         if common_beam is not None:
             print('   common_beam!=0.0   ')
-            Bl_gauss_fwhm = hp.gauss_beam(instrument[freq_tag]['beam']*arcmin2rad, lmax=2*nside)
-            Bl_gauss_common = hp.gauss_beam(common_beam*arcmin2rad, lmax=2*nside)
+            Bl_gauss_fwhm = hp.gauss_beam(instrument[freq_tag]['beam']*arcmin2rad, lmax=3*nside)
+            Bl_gauss_common = hp.gauss_beam(common_beam*arcmin2rad, lmax=3*nside)
 
             alms = hp.map2alm(tot_map, lmax=3*nside)
+            # IPython.embed()
+            alms_beamed = []
             for alm_ in alms:
-                hp.almxfl(alm_, Bl_gauss_common/Bl_gauss_fwhm, inplace=True)
-            tot_map_ = hp.alm2map(alms, nside)
-            tot_map = tot_map_
+                # hp.almxfl(alm_, Bl_gauss_common/Bl_gauss_fwhm, inplace=True)
+                alms_beamed.append(hp.almxfl(alm_, Bl_gauss_common/Bl_gauss_fwhm, inplace=False))
+            # tot_map_ = hp.alm2map(alms, nside)
+            tot_map = hp.alm2map(alms_beamed, nside)
+            # tot_map = tot_map_
         else:
             tot_map = hp.ud_grade(tot_map, nside)
 
@@ -387,7 +392,7 @@ def main():
         print('time spec min = ', time.time() - time_spec_min)
         print('results spec = ', results_min.x)
         print('spec min success = ', results_min.success)
-        # IPython.embed()
+        IPython.embed()
 
         np.save(output_dir+'results_spec.npy', results_min.x)
         # results_min.x[-1] = -3
