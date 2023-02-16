@@ -66,12 +66,13 @@ for f in range(len(noise_lvl)):
     noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(3*nside+1)
 
     cmb_spectra_beamed.append(cmb_spectra[:, :3*nside+1] / (Bl**2))
-    noise_nl.append(noise / (Bl**2))
+    '''Noise not affected by beam!'''
+    # noise_nl.append(noise / (Bl**2))
 
     fg_maps_smoothed.append(hp.smoothing(
         np.array([fg_freq_maps_full[2*f]*0, fg_freq_maps_full[2*f],
                   fg_freq_maps_full[2*f+1]]), fwhm=beam_rad[f]))
-    # noise_nl.append(noise)
+    noise_nl.append(noise)
 noise_nl = np.array(noise_nl)
 cmb_spectra_beamed = np.array(cmb_spectra_beamed)
 fg_maps_smoothed = np.array(fg_maps_smoothed)
