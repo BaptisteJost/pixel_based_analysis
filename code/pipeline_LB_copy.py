@@ -322,7 +322,7 @@ def main():
         elif machine == 'idark':
             # path_data = '/home/jost/simu/LB_mock/fullsky_nobeam/mock_LB_nobeam' + \
             #     str(rank).zfill(4)+'.npy'
-            path_data = '/home/jost/simu/LB_mock/fullsky_nobeam/mock_LB_withbeam' + \
+            path_data = '/home/jost/simu/LB_mock/fullsky_withbeam/mock_LB' + \
                 str(rank).zfill(4)+'.npy'
         else:
             print('ERROR: path_data not specified for this machine')
@@ -391,9 +391,9 @@ def main():
         # results_min.x.append(-3)
         # results_min.x = np.array(results_min.x)
 
-        # results_min.x = np.zeros(freq_number+2)
-        # results_min.x[-2] = 1.54
-        # results_min.x[-1] = -3
+        results_min.x = np.zeros(freq_number+2)
+        results_min.x[-2] = 1.54
+        results_min.x[-1] = -3
         start_min = time.time()
         # for rank in range(99):
         # print(rank)
