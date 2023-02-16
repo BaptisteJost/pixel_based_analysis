@@ -195,11 +195,11 @@ def jac_cosmo_like_data(cosmo_params, Cl_noise_matrix, Cl_data, binning_def, fsk
     return np.array([jac_dr/2, jac_beta/2])
 
 
-def import_and_smooth_data(instrument, rank, common_beam=None, phase=1):
+def import_and_smooth_data(instrument, rank, common_beam=None, phase=1, path=None):
     # rank = 0
     data = []
     arcmin2rad = np.pi/(180.0*60.0)
-
+    f = 0
     for freq_tag in instrument.keys():
         if phase == 1:
             tot_map = hp.read_map('/global/cfs/cdirs/litebird/simulations/maps/birefringence_project_paper/Phase1/comb/' +
@@ -210,6 +210,11 @@ def import_and_smooth_data(instrument, rank, common_beam=None, phase=1):
         elif phase == 3:
             tot_map = hp.read_map('/global/cfs/cdirs/litebird/simulations/maps/birefringence_project_paper/Phase3_updated_seed_v2/comb/' +
                                   str(rank).zfill(4)+'/'+freq_tag+'_comb_d1s1_white_noise_CMB_polangle.fits', field=(0, 1, 2))
+        elif phase == None:
+            print('importing mock data, frequency channel #', f)
+            tot_map_ = np.load(path)[2*f:2*f+1]
+            tot_map = np.array([np.zeros(tot_map_.sahpe[1]), tot_map_[0], tot_map_[1]])
+            f += 1
         if common_beam is not None:
             print('   common_beam!=0.0   ')
             Bl_gauss_fwhm = hp.gauss_beam(instrument[freq_tag]['beam']*arcmin2rad, lmax=2*nside)
@@ -238,7 +243,7 @@ def main():
     # rank = 0
     print('MPI size = ', size)
     print('MPI rank = ', rank_mpi)
-    phase = 1
+    phase = None
     for map_iter in range(1):
         rank = 3*rank_mpi + map_iter
         print('================================================')
@@ -327,15 +332,17 @@ def main():
         else:
             print('ERROR: path_data not specified for this machine')
         print('path data = ', path_data)
-        data = np.load(path_data)
+        # data = np.load(path_data)
+        # freq_maps = data*mask
+        # ddt = get_ddt(data, mask)
+        # data = import_and_smooth_data(instrument_LB, rank, common_beam=common_beam, phase=phase)
+        data = import_and_smooth_data(
+            instrument_LB, rank, common_beam=common_beam, phase=phase, path=path_data)
         freq_maps = data*mask
+        # freq_maps *= mask
         ddt = get_ddt(data, mask)
         print('time import = ', time.time() - time_import)
         time_spec_ini = time.time()
-        # data = import_and_smooth_data(instrument_LB, rank, common_beam=common_beam, phase=1)
-        # freq_maps = data*mask
-        # # freq_maps *= mask
-        # ddt = get_ddt(data, mask)
 
         scatter = prior_precision.tolist()
         scatter.append(0.1)  # first spectral index
@@ -391,9 +398,9 @@ def main():
         # results_min.x.append(-3)
         # results_min.x = np.array(results_min.x)
 
-        results_min.x = np.zeros(freq_number+2)
-        results_min.x[-2] = 1.54
-        results_min.x[-1] = -3
+        # results_min.x = np.zeros(freq_number+2)
+        # results_min.x[-2] = 1.54
+        # results_min.x[-1] = -3
         start_min = time.time()
         # for rank in range(99):
         # print(rank)
