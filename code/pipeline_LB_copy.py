@@ -195,12 +195,13 @@ def jac_cosmo_like_data(cosmo_params, Cl_noise_matrix, Cl_data, binning_def, fsk
     return np.array([jac_dr/2, jac_beta/2])
 
 
-def import_and_smooth_data(instrument, rank, common_beam=None, phase=1, path=None):
+def import_and_smooth_data(instrument, rank, common_beam=None, phase=1, path=None, test_nobeam=False):
     # rank = 0
     data = []
     arcmin2rad = np.pi/(180.0*60.0)
     f = 0
     for freq_tag in instrument.keys():
+        print('frequency = ', freq_tag)
         if phase == 1:
             tot_map = hp.read_map('/global/cfs/cdirs/litebird/simulations/maps/birefringence_project_paper/Phase1/comb/' +
                                   str(rank).zfill(4)+'/'+freq_tag+'_comb_d0s0_white_noise_CMB.fits', field=(0, 1, 2))
@@ -210,28 +211,42 @@ def import_and_smooth_data(instrument, rank, common_beam=None, phase=1, path=Non
         elif phase == 3:
             tot_map = hp.read_map('/global/cfs/cdirs/litebird/simulations/maps/birefringence_project_paper/Phase3_updated_seed_v2/comb/' +
                                   str(rank).zfill(4)+'/'+freq_tag+'_comb_d1s1_white_noise_CMB_polangle.fits', field=(0, 1, 2))
-        elif phase == None:
+        elif phase is None:
             print('importing mock data, frequency channel #', f)
             tot_map_ = np.load(path)[2*f:2*f+2]
             # IPython.embed()
             tot_map = np.array([np.zeros(tot_map_.shape[1]), tot_map_[0], tot_map_[1]])
             f += 1
+        elif phase == 'test':
+            tot_map = hp.read_map('/home/baptiste/Downloads/LBsim/0000/'
+                                  + freq_tag+'_comb_d0s0_white_noise_CMB.fits', field=(0, 1, 2))
+        elif phase == 'test' and machine == 'idark':
+            tot_map = hp.read_map('/home/jost/simu/LB_phase1/comb/0000/'
+                                  + freq_tag+'_comb_d0s0_white_noise_CMB.fits', field=(0, 1, 2))
+
+        if not test_nobeam:
+            Bl_gauss_fwhm = hp.gauss_beam(
+                instrument[freq_tag]['beam']*arcmin2rad, lmax=3*nside, pol=True)[:, 1]
+        else:
+            print('TEST NO BEAM')
+            Bl_gauss_fwhm = np.ones(3*nside+1)
+
         if common_beam is not None:
             print('   common_beam!=0.0   ')
-            Bl_gauss_fwhm = hp.gauss_beam(instrument[freq_tag]['beam']*arcmin2rad, lmax=3*nside)
-            Bl_gauss_common = hp.gauss_beam(common_beam*arcmin2rad, lmax=3*nside)
-
-            alms = hp.map2alm(tot_map, lmax=3*nside)
-            # IPython.embed()
-            alms_beamed = []
-            for alm_ in alms:
-                # hp.almxfl(alm_, Bl_gauss_common/Bl_gauss_fwhm, inplace=True)
-                alms_beamed.append(hp.almxfl(alm_, Bl_gauss_common/Bl_gauss_fwhm, inplace=False))
-            # tot_map_ = hp.alm2map(alms, nside)
-            tot_map = hp.alm2map(alms_beamed, nside)
-            # tot_map = tot_map_
+            Bl_gauss_common = hp.gauss_beam(common_beam*arcmin2rad, lmax=3*nside, pol=True)[:, 1]
         else:
-            tot_map = hp.ud_grade(tot_map, nside)
+            Bl_gauss_common = np.ones(Bl_gauss_fwhm.shape[0])
+        alms = hp.map2alm(tot_map, lmax=3*nside)
+        # IPython.embed()
+        alms_beamed = []
+        for alm_ in alms:
+            # hp.almxfl(alm_, Bl_gauss_common/Bl_gauss_fwhm, inplace=True)
+            alms_beamed.append(hp.almxfl(alm_, Bl_gauss_common/Bl_gauss_fwhm, inplace=False))
+        # tot_map_ = hp.alm2map(alms, nside)
+        tot_map = hp.alm2map(alms_beamed, nside)
+        # tot_map = tot_map_
+        # else:
+        #     tot_map = hp.ud_grade(tot_map, nside)
 
         data.append(tot_map[1])
         data.append(tot_map[2])
@@ -248,7 +263,8 @@ def main():
     # rank = 0
     print('MPI size = ', size)
     print('MPI rank = ', rank_mpi)
-    phase = None
+    # phase = None
+    phase = 'test'
     for map_iter in range(1):
         rank = 3*rank_mpi + map_iter
         print('================================================')
@@ -262,7 +278,12 @@ def main():
         elif machine == 'idark':
             output_dir = '/home/jost/results/mock_LB_fullsky_withbeam/' + str(rank).zfill(4) + '/'
         print('rank=', rank)
+        print('OUTPUT DIR FIXED FOR LOCAL DEBUG!!!!')
+        # output_dir = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/pipeline_data/debug_beam/'
+        # output_dir = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/pipeline_data/debug_beam/'
+        output_dir = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/pipeline_data/debug_beam_LBsim/'
         print('output_dir = ', output_dir)
+
         if not os.path.exists(output_dir):
             os.mkdir(output_dir)
 
@@ -316,10 +337,14 @@ def main():
         # path_data = pixel_path+'code/'+'mock_LB_test_freq_maps_nonoise.npy'
 
         common_beam = 80.0
-        scaling_factor_for_sensitivity_due_to_transfer_function = np.array([1.03538701, 1.49483298, 1.68544978, 1.87216344, 1.77112946, 1.94462893,
-                                                                            1.83405669, 1.99590729, 1.87252192, 2.02839885, 2.06834379, 2.09336487,
-                                                                            1.93022977, 1.98931453, 2.02184001, 2.0436672,  2.05440473, 2.04784698,
-                                                                            2.08458758, 2.10468234, 2.1148482, 2.13539999])
+        # scaling_factor_for_sensitivity_due_to_transfer_function = np.array([1.03538701, 1.49483298, 1.68544978, 1.87216344, 1.77112946, 1.94462893,
+        #                                                                     1.83405669, 1.99590729, 1.87252192, 2.02839885, 2.06834379, 2.09336487,
+        #                                                                     1.93022977, 1.98931453, 2.02184001, 2.0436672,  2.05440473, 2.04784698,
+        #                                                                     2.08458758, 2.10468234, 2.1148482, 2.13539999])
+        # common_beam = 180.0*60.0 / np.pi
+        # common_beam = None
+        scaling_factor_for_sensitivity_due_to_transfer_function = np.ones(freq_number)
+
         # print('WARNING: NO BEAM TEST')
         # common_beam = None
         test_nobeam = False
@@ -336,13 +361,15 @@ def main():
                 str(rank).zfill(4)+'.npy'
         else:
             print('ERROR: path_data not specified for this machine')
+        print('PATH DATA FIXED FOR LOCAL DEBUG!!!!')
+        path_data = '/home/baptiste/Downloads/mock_LB0000.npy'
         print('path data = ', path_data)
         # data = np.load(path_data)
         # freq_maps = data*mask
         # ddt = get_ddt(data, mask)
         # data = import_and_smooth_data(instrument_LB, rank, common_beam=common_beam, phase=phase)
         data = import_and_smooth_data(
-            instrument_LB, rank, common_beam=common_beam, phase=phase, path=path_data)
+            instrument_LB, rank, common_beam=common_beam, phase=phase, path=path_data, test_nobeam=test_nobeam)
         freq_maps = data*mask
         # freq_maps *= mask
         ddt = get_ddt(data, mask)
@@ -392,7 +419,7 @@ def main():
         print('time spec min = ', time.time() - time_spec_min)
         print('results spec = ', results_min.x)
         print('spec min success = ', results_min.success)
-        IPython.embed()
+        # IPython.embed()
 
         np.save(output_dir+'results_spec.npy', results_min.x)
         # results_min.x[-1] = -3
@@ -426,6 +453,8 @@ def main():
                                                       common_beam=common_beam,
                                                       scaling_factor=scaling_factor_for_sensitivity_due_to_transfer_function,
                                                       test_nobeam=test_nobeam, INSTRU=INSTRU)
+        # scaling_factor=np.ones(freq_number) or scaling_factor_for_sensitivity_due_to_transfer_function
+
         '''in from_spectra_to_cosmo() lmin=0 and lmax=3*nside so that bin_cell has the right ell range as input, indeed it expects those value. bin_cell is so initialised that it then takes care of having the desired lmin. Not necessarily the lmax as we typically set lmax < 3*nside but it is taken care of with indices_ellrange later on.'''
     # 3*nside-1,
         # ell_noise = np.linspace(0, 3*nside-1, 3*nside, dtype=int)
@@ -472,7 +501,10 @@ def main():
             print('WARNING: if PARTIAL sky, purify_b should be TRUE')
         # common_beam = 80.0
         # common_beam = 80
-        Bl_eff = hp.gauss_beam(np.radians(common_beam/60.0), lmax=3*nside+1)
+        if common_beam is not None:
+            Bl_eff = hp.gauss_beam(np.radians(common_beam/60.0), lmax=3*nside+1, pol=True)[:, 1]
+        else:
+            Bl_eff = np.ones(3*nside+2)
         # Bl_eff = np.ones(3*nside + 1)
 
         w = nmt.NmtWorkspace()
@@ -612,6 +644,10 @@ def main():
                  [ell_index_min_plot:], label='data EE')
         plt.plot(ell_eff[ell_index_min_plot:], -norm*Cls_data_matrix[0, 0]
                  [ell_index_min_plot:], '--', color='green')
+        plt.plot(ell_eff[ell_index_min_plot:], norm*Cl_fid['EE']
+                 [ell_eff.astype(int)], linestyle='--', label='true primordial EE')
+        plt.plot(ell_eff[ell_index_min_plot:], norm*Cl_fid['EE'][ell_eff.astype(int)] + norm *
+                 Cl_noise_matrix_bin[0, 0][ell_index_min_plot:], linestyle='--', label='true primordial EE + mean noise')
         plt.legend()
         plt.loglog()
         plt.ylabel(r'$\frac{\ell (\ell+1)}{2\pi} C_\ell^{EE}$')
@@ -627,6 +663,10 @@ def main():
                  [ell_index_min_plot:], label='data BB')
         plt.plot(ell_eff[ell_index_min_plot:], -norm*Cls_data_matrix[1, 1]
                  [ell_index_min_plot:], '--', color='green')
+        plt.plot(ell_eff[ell_index_min_plot:], norm*Cl_fid['BB']
+                 [ell_eff.astype(int)], linestyle='--', label='true primordial BB')
+        plt.plot(ell_eff[ell_index_min_plot:], norm*Cl_fid['BB'][ell_eff.astype(int)] + norm *
+                 Cl_noise_matrix_bin[1, 1][ell_index_min_plot:], linestyle='--', label='true primordial BB + mean noise')
         plt.legend()
         plt.loglog()
         plt.ylabel(r'$\frac{\ell (\ell+1)}{2\pi} C_\ell^{BB}$')
@@ -650,6 +690,7 @@ def main():
         print('time plot = ', time.time() - time_plot)
         print('')
         print('time one map = ', time.time() - start)
+        IPython.embed()
 
     exit()
 

@@ -66,7 +66,7 @@ def spectral_sampling(spectral_params, ddt, model_skm, total_prior_matrix, prior
         return (spectral_like - Prior)/2
 
 
-def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_f_mode, beam_corrected, one_over_ell, lmin, lmax, common_beam=None, scaling_factor=None, test_nobeam=False, INSTRU= 'LiteBIRD'):
+def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_f_mode, beam_corrected, one_over_ell, lmin, lmax, common_beam=None, scaling_factor=None, test_nobeam=False, INSTRU='LiteBIRD'):
     freq_number = model_skm.frequencies.shape[0]
     angle_eval = spectral_params[:freq_number]*u.rad
     fg_params = spectral_params[freq_number:freq_number+2]
@@ -144,14 +144,22 @@ def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_
         noise_lvl = np.array([instrument_LB[f]['P_sens'] for f in instrument_LB.keys()])
         if common_beam is not None:
             noise_lvl /= scaling_factor
-            beam_rad = np.array([common_beam]*len(instrument_LB.keys())) * u.arcmin.to(u.rad)
+            beam_rad_common = np.array([common_beam]*len(instrument_LB.keys())) * u.arcmin.to(u.rad)
+            beam_rad_deconv = np.array([instrument_LB[f]['beam']
+                                        for f in instrument_LB.keys()]) * u.arcmin.to(u.rad)
         else:
             beam_rad = np.array([instrument_LB[f]['beam']
                                  for f in instrument_LB.keys()]) * u.arcmin.to(u.rad)
         noise_nl = []
         from healpy import gauss_beam
         for f in range(len(noise_lvl)):
-            Bl = gauss_beam(beam_rad[f], lmax=lmax)[lmin:]  # [2:]
+            if common_beam is not None:
+                Bl_common = gauss_beam(beam_rad_common[f], lmax=lmax, pol=True)[:, 1][lmin:]  # [2:]
+                # Bl_deconv = gauss_beam(beam_rad_deconv[f], lmax=lmax, pol=True)[:, 1][lmin:]  # [2:]
+                Bl = Bl_common  # / Bl_deconv
+            else:
+                Bl = gauss_beam(beam_rad[f], lmax=lmax, pol=True)[:, 1][lmin:]  # [2:]
+
             if test_nobeam:
                 Bl = np.ones(Bl.shape)
             noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(len(ell_noise))
