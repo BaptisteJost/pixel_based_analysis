@@ -60,12 +60,13 @@ cmb_spectra_beamed = []
 fg_maps_smoothed = []
 for f in range(len(noise_lvl)):
     # Bl = hp.gauss_beam(beam_rad[f], lmax=lmax-1)[2:]
-    Bl = hp.gauss_beam(beam_rad[f], lmax=3*nside)
+    # WARNING: in gauss_beam E and B beams should be the same but is it always true?
+    Bl = hp.gauss_beam(beam_rad[f], lmax=3*nside, pol=True)[:, 1]
     # Bl = np.ones(Bl.shape)
     # noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(len(ell_noise))
     noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(3*nside+1)
 
-    cmb_spectra_beamed.append(cmb_spectra[:, :3*nside+1] / (Bl**2))
+    cmb_spectra_beamed.append(cmb_spectra[:, :3*nside+1] * (Bl**2))
     '''Noise not affected by beam!'''
     # noise_nl.append(noise / (Bl**2))
 
@@ -88,7 +89,7 @@ print('output dir = ', output_dir)
 
 for i in range(99):
     # map_CMB = hp.synfast(cmb_spectra, nside, new=True)[1:]
-    print('generating map #',i)
+    print('generating map #', i)
     freq_maps = []
     for f in range(freq_number):
         map_noise = hp.synfast([noise_nl[f]*0, noise_nl[f], noise_nl[f],
