@@ -203,7 +203,7 @@ def import_and_smooth_data(instrument, rank, common_beam=None, phase=1, path=Non
     for freq_tag in instrument.keys():
         print('frequency = ', freq_tag)
         if phase == 1:
-            tot_map = hp.read_map('/global/cfs/cdirs/litebird/simulations/maps/birefringence_project_paper/Phase1/comb/' +
+            tot_map = hp.read_map('/lustre/work/jost/simulations/LB_phase1/comb/' + 
                                   str(rank).zfill(4)+'/'+freq_tag+'_comb_d0s0_white_noise_CMB.fits', field=(0, 1, 2))
         elif phase == 2:
             tot_map = hp.read_map('/global/cfs/cdirs/litebird/simulations/maps/birefringence_project_paper/Phase2/comb/' +
@@ -217,11 +217,11 @@ def import_and_smooth_data(instrument, rank, common_beam=None, phase=1, path=Non
             # IPython.embed()
             tot_map = np.array([np.zeros(tot_map_.shape[1]), tot_map_[0], tot_map_[1]])
             f += 1
-        elif phase == 'test':
+        elif phase == 'test' and machine == 'local':
             tot_map = hp.read_map('/home/baptiste/Downloads/LBsim/0000/'
                                   + freq_tag+'_comb_d0s0_white_noise_CMB.fits', field=(0, 1, 2))
         elif phase == 'test' and machine == 'idark':
-            tot_map = hp.read_map('/home/jost/simu/LB_phase1/comb/0000/'
+            tot_map = hp.read_map('/lustre/work/jost/simulations/LB_phase1/comb/0000/'
                                   + freq_tag+'_comb_d0s0_white_noise_CMB.fits', field=(0, 1, 2))
 
         if not test_nobeam:
@@ -264,8 +264,8 @@ def main():
     print('MPI size = ', size)
     print('MPI rank = ', rank_mpi)
     # phase = None
-    phase = 'test'
-    for map_iter in range(1):
+    phase = 1
+    for map_iter in range(3):
         rank = 3*rank_mpi + map_iter
         print('================================================')
         print("MAP NUMBER = ", rank)
@@ -276,12 +276,13 @@ def main():
             output_dir = pixel_path+'results_and_data/pipeline_data/test_mock/' + \
                 str(rank).zfill(4) + '_fullsky_nobeam/'
         elif machine == 'idark':
-            output_dir = '/home/jost/results/mock_LB_fullsky_withbeam/' + str(rank).zfill(4) + '/'
+            output_dir = '/home/jost/results/LB_phase1_fullsky_withbeam/' + str(rank).zfill(4) + '/'
         print('rank=', rank)
-        print('OUTPUT DIR FIXED FOR LOCAL DEBUG!!!!')
+        # print('OUTPUT DIR FIXED FOR LOCAL DEBUG!!!!')
         # output_dir = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/pipeline_data/debug_beam/'
         # output_dir = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/pipeline_data/debug_beam/'
-        output_dir = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/pipeline_data/debug_beam_LBsim/'
+        # output_dir = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/pipeline_data/debug_beam_LBsim/'
+        # output_dir = '/home/jost/results/debug_beam_test/'
         print('output_dir = ', output_dir)
 
         if not os.path.exists(output_dir):
