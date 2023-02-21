@@ -223,7 +223,8 @@ def import_and_smooth_data(instrument, rank, common_beam=None, phase=1, path=Non
         elif phase == 'test' and machine == 'idark':
             tot_map = hp.read_map('/lustre/work/jost/simulations/LB_phase1/comb/0000/'
                                   + freq_tag+'_comb_d0s0_white_noise_CMB.fits', field=(0, 1, 2))
-
+        if phase is not None and path is not None:
+            print('WARNING: in import_and_smooth_data() a path was given but phase argument is not None, the path is therefore ignored')
         if not test_nobeam:
             Bl_gauss_fwhm = hp.gauss_beam(
                 instrument[freq_tag]['beam']*arcmin2rad, lmax=3*nside, pol=True)[:, 1]
@@ -362,8 +363,9 @@ def main():
                 str(rank).zfill(4)+'.npy'
         else:
             print('ERROR: path_data not specified for this machine')
-        print('PATH DATA FIXED FOR LOCAL DEBUG!!!!')
-        path_data = '/home/baptiste/Downloads/mock_LB0000.npy'
+        # print('PATH DATA FIXED FOR LOCAL DEBUG!!!!')
+        # path_data = '/home/baptiste/Downloads/mock_LB0000.npy'
+        path_data = None
         print('path data = ', path_data)
         # data = np.load(path_data)
         # freq_maps = data*mask
@@ -591,16 +593,26 @@ def main():
         time_cosmo_min = time.time()
         bounds_cosmo = ((-1e-5, 5), (-np.pi/8, np.pi/8))
         # init_cosmo = [0, 0]
-        init_cosmo = np.random.normal([0, 0], np.abs([bounds_cosmo[0][0], bounds_cosmo[1][0]]))
-        print('init cosmo = ', init_cosmo)
-        results_min_cosmo = minimize(cosmo_like_data, init_cosmo, args=(
-            Cl_noise_matrix_bin, Cls_data_matrix, b, fsky, True, indices_ellrange),
-            tol=1e-18, options={'maxiter': 1000}, method='L-BFGS-B', bounds=bounds_cosmo)
+        cosmo_min_success = False
+        iter_cosmo_min = 0
+        max_iter_cosmo = 10
+        while not cosmo_min_success and iter_cosmo_min < max_iter_cosmo:
+            print('Cosmo likelihood minimisation iteration #', iter_cosmo_min)
+            init_cosmo = np.random.normal([0, 0], np.abs([bounds_cosmo[0][0], bounds_cosmo[1][0]]))
+            print('init cosmo = ', init_cosmo)
+            results_min_cosmo = minimize(cosmo_like_data, init_cosmo, args=(
+                Cl_noise_matrix_bin, Cls_data_matrix, b, fsky, True, indices_ellrange),
+                tol=1e-18, options={'maxiter': 1000}, method='L-BFGS-B', bounds=bounds_cosmo)
+            print('results success = ', results_min_cosmo.success)
+
+            cosmo_min_success = results_min_cosmo.success
+            iter_cosmo_min += 1
         np.save(output_dir+'results_cosmo.npy', results_min_cosmo.x)
         print('results cosmo = ', results_min_cosmo.x)
         rad2deg = 1*u.rad.to(u.deg)
         print('beta deg = ', results_min_cosmo.x[-1]*rad2deg)
         print('results success = ', results_min_cosmo.success)
+
         if not results_min_cosmo.success:
             print('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!')
         print('')
@@ -709,7 +721,7 @@ def main():
         print('time plot = ', time.time() - time_plot)
         print('')
         print('time one map = ', time.time() - start)
-        IPython.embed()
+        # IPython.embed()
 
     exit()
 
