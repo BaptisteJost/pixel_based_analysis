@@ -411,28 +411,30 @@ def main():
         time_spec_min = time.time()
         spec_min_success = False
         iter_spec_min = 0
-        IPython.embed()
-        while not spec_min_success or iter_spec_min < init_MCMC.shape[0]:
+        # IPython.embed()
+        while not spec_min_success and iter_spec_min < init_MCMC.shape[0]:
             print('Spectral likelihood minimisation iteration #', iter_spec_min)
             try:
                 print('init spec=', init_MCMC[iter_spec_min])
                 results_min = minimize(spectral_sampling, init_MCMC[iter_spec_min], args=(
                     ddt, model_skm, prior_matrix, prior_centre, True),
                     tol=1e-18, options={'maxiter': 1000}, method='L-BFGS-B')
-                iter_spec_min += 1
-                spec_min_success = results_min.success
+                print('try success: ', results_min.success)
             except np.linalg.LinAlgError as err:
                 if 'Singular matrix' in str(err):
-                    iter_spec_min += 1
                     print('ERROR CAUGHT: singular matrix')
+                    iter_spec_min += 1
+                    print('new iter #', iter_spec_min)
                     print('NEW init spec=', init_MCMC[iter_spec_min])
                     results_min = minimize(spectral_sampling, init_MCMC[iter_spec_min], args=(
                         ddt, model_skm, prior_matrix, prior_centre, True),
                         tol=1e-18, options={'maxiter': 1000}, method='L-BFGS-B')
+                    print('except success: ', results_min.success)
                     spec_min_success = results_min.success
                 else:
                     raise
-
+            iter_spec_min += 1
+            spec_min_success = results_min.success
         print('time spec min = ', time.time() - time_spec_min)
         print('results spec = ', results_min.x)
         print('spec min success = ', results_min.success)
