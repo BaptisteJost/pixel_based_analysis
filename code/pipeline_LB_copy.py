@@ -203,7 +203,7 @@ def import_and_smooth_data(instrument, rank, common_beam=None, phase=1, path=Non
     for freq_tag in instrument.keys():
         print('frequency = ', freq_tag)
         if phase == 1:
-            tot_map = hp.read_map('/lustre/work/jost/simulations/LB_phase1/comb/' + 
+            tot_map = hp.read_map('/lustre/work/jost/simulations/LB_phase1/comb/' +
                                   str(rank).zfill(4)+'/'+freq_tag+'_comb_d0s0_white_noise_CMB.fits', field=(0, 1, 2))
         elif phase == 2:
             tot_map = hp.read_map('/global/cfs/cdirs/litebird/simulations/maps/birefringence_project_paper/Phase2/comb/' +
@@ -404,19 +404,35 @@ def main():
         # nsteps = nsteps_spectral
         # discard = discard_spectral
         param_number = freq_number + 2  # num of msical + spectral index
+
         init_MCMC = np.random.normal(
             total_params[:param_number], scatter[:param_number], (2*param_number, param_number))
         print('time spec ini = ', time.time() - time_spec_ini)
         time_spec_min = time.time()
-        # nwalkers = 2 * param_number
+        spec_min_success = False
+        iter_spec_min = 0
+        IPython.embed()
+        while not spec_min_success or iter_spec_min < init_MCMC.shape[0]:
+            print('Spectral likelihood minimisation iteration #', iter_spec_min)
+            try:
+                print('init spec=', init_MCMC[iter_spec_min])
+                results_min = minimize(spectral_sampling, init_MCMC[iter_spec_min], args=(
+                    ddt, model_skm, prior_matrix, prior_centre, True),
+                    tol=1e-18, options={'maxiter': 1000}, method='L-BFGS-B')
+                iter_spec_min += 1
+                spec_min_success = results_min.success
+            except np.linalg.LinAlgError as err:
+                if 'Singular matrix' in str(err):
+                    iter_spec_min += 1
+                    print('ERROR CAUGHT: singular matrix')
+                    print('NEW init spec=', init_MCMC[iter_spec_min])
+                    results_min = minimize(spectral_sampling, init_MCMC[iter_spec_min], args=(
+                        ddt, model_skm, prior_matrix, prior_centre, True),
+                        tol=1e-18, options={'maxiter': 1000}, method='L-BFGS-B')
+                    spec_min_success = results_min.success
+                else:
+                    raise
 
-        # n_obspix = np.sum(mask == 1)
-        # print('test n_obspix')
-        print('init spec=', init_MCMC[0])
-        # IPython.embed()
-        results_min = minimize(spectral_sampling, init_MCMC[0], args=(
-            ddt, model_skm, prior_matrix, prior_centre, True),
-            tol=1e-18, options={'maxiter': 1000}, method='L-BFGS-B')
         print('time spec min = ', time.time() - time_spec_min)
         print('results spec = ', results_min.x)
         print('spec min success = ', results_min.success)
