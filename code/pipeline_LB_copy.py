@@ -261,13 +261,14 @@ def main():
     comm = MPI.COMM_WORLD
     size = comm.Get_size()
     rank_mpi = comm.rank  # rank=0
-    # rank = 0
+    # rank = 99
     print('MPI size = ', size)
     print('MPI rank = ', rank_mpi)
     # phase = None
     phase = 1
-    for map_iter in range(3):
+    for map_iter in range(1):
         rank = 3*rank_mpi + map_iter
+        rank = 22
         print('================================================')
         print("MAP NUMBER = ", rank)
         start = time.time()
@@ -721,7 +722,7 @@ def main():
         print('time plot = ', time.time() - time_plot)
         print('')
         print('time one map = ', time.time() - start)
-        # IPython.embed()
+        IPython.embed()
 
     exit()
 
