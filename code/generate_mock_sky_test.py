@@ -61,22 +61,22 @@ fg_maps_smoothed = []
 for f in range(len(noise_lvl)):
     # Bl = hp.gauss_beam(beam_rad[f], lmax=lmax-1)[2:]
     # WARNING: in gauss_beam E and B beams should be the same but is it always true?
-    Bl = hp.gauss_beam(beam_rad[f], lmax=3*nside, pol=True)[:, 1]
+    # Bl = hp.gauss_beam(beam_rad[f], lmax=3*nside, pol=True)[:, 1]
     # Bl = np.ones(Bl.shape)
     # noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(len(ell_noise))
     noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(3*nside+1)
 
-    cmb_spectra_beamed.append(cmb_spectra[:, :3*nside+1] * (Bl**2))
+    # cmb_spectra_beamed.append(cmb_spectra[:, :3*nside+1] * (Bl**2))
     '''Noise not affected by beam!'''
     # noise_nl.append(noise / (Bl**2))
 
-    fg_maps_smoothed.append(hp.smoothing(
-        np.array([fg_freq_maps_full[2*f]*0, fg_freq_maps_full[2*f],
-                  fg_freq_maps_full[2*f+1]]), fwhm=beam_rad[f]))
+    # fg_maps_smoothed.append(hp.smoothing(
+    #     np.array([fg_freq_maps_full[2*f]*0, fg_freq_maps_full[2*f],
+    #               fg_freq_maps_full[2*f+1]]), fwhm=beam_rad[f]))
     noise_nl.append(noise)
 noise_nl = np.array(noise_nl)
-cmb_spectra_beamed = np.array(cmb_spectra_beamed)
-fg_maps_smoothed = np.array(fg_maps_smoothed)
+# cmb_spectra_beamed = np.array(cmb_spectra_beamed)
+# fg_maps_smoothed = np.array(fg_maps_smoothed)
 
 if machine == 'idark':
     output_dir = '/home/jost/simu/LB_mock/fullsky_withbeam/'
@@ -91,12 +91,14 @@ for i in range(99):
     # map_CMB = hp.synfast(cmb_spectra, nside, new=True)[1:]
     print('generating map #', i)
     freq_maps = []
+    map_CMB = hp.synfast(cmb_spectra[:, :3*nside+1], nside, new=True)
     for f in range(freq_number):
         map_noise = hp.synfast([noise_nl[f]*0, noise_nl[f], noise_nl[f],
                                 noise_nl[f]*0], nside, new=True)[1:]
-        map_CMB = hp.synfast(cmb_spectra_beamed[f], nside, new=True)[1:]
         # map_f = map_CMB + fg_freq_maps_full[2*f:2*f+1] + map_noise
-        map_f = map_CMB + fg_maps_smoothed[f][1:] + map_noise
+        # map_f = map_CMB + fg_maps_smoothed[f][1:] + map_noise
+        map_f = hp.smoothing(map_CMB+np.array([fg_freq_maps_full[2*f]*0, fg_freq_maps_full[2*f],
+                                               fg_freq_maps_full[2*f+1]]), fwhm=beam_rad[f])[1:] + map_noise
         freq_maps.append(map_f[0])
         freq_maps.append(map_f[1])
 
