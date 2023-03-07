@@ -155,15 +155,18 @@ def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_
         for f in range(len(noise_lvl)):
             if common_beam is not None:
                 Bl_common = gauss_beam(beam_rad_common[f], lmax=lmax, pol=True)[:, 1][lmin:]  # [2:]
-                # Bl_deconv = gauss_beam(beam_rad_deconv[f], lmax=lmax, pol=True)[:, 1][lmin:]  # [2:]
-                Bl = Bl_common  # / Bl_deconv
+                Bl_deconv = gauss_beam(beam_rad_deconv[f], lmax=lmax, pol=True)[:, 1][lmin:]  # [2:]
+                # Bl = Bl_common  # / Bl_deconv
+                Bl = Bl_deconv
+                # print('blop')
             else:
                 Bl = gauss_beam(beam_rad[f], lmax=lmax, pol=True)[:, 1][lmin:]  # [2:]
 
             if test_nobeam:
                 Bl = np.ones(Bl.shape)
             noise = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(len(ell_noise))
-            noise_nl.append(noise / (Bl**2))
+            # noise_nl.append(noise / (Bl**2))
+            noise_nl.append(noise * (Bl**2))
         noise_nl = np.array(noise_nl)
         # noise_nl = np.repeat(noise_nl, 2, 0)[..., lmin-2:]
         noise_nl = np.repeat(noise_nl, 2, 0)  # [..., lmin:]

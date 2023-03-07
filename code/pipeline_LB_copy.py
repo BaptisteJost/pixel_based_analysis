@@ -33,8 +33,10 @@ def get_ddt(data, mask):
     return ddt
 
 
-def binning_definition(nside, lmin=2, lmax=200, fsky=1.0):
-    b = nmt.NmtBin(nside, nlb=int(1.5/fsky))
+def binning_definition(nside, fsky=1.0):
+    # b = nmt.NmtBin(nside, nlb=int(1.5/fsky))
+    b = nmt.NmtBin.from_nside_linear(nside, nlb=int(1.5/fsky))
+    # b = nmt.NmtBin(nside, nlb=int(3/fsky))
     return b
 
 
@@ -223,27 +225,32 @@ def import_and_smooth_data(instrument, rank, common_beam=None, phase=1, path=Non
         elif phase == 'test' and machine == 'idark':
             tot_map = hp.read_map('/lustre/work/jost/simulations/LB_phase1/comb/0000/'
                                   + freq_tag+'_comb_d0s0_white_noise_CMB.fits', field=(0, 1, 2))
+
         if phase is not None and path is not None:
             print('WARNING: in import_and_smooth_data() a path was given but phase argument is not None, the path is therefore ignored')
+
+        nside_input = hp.npix2nside(tot_map.shape[-1])
         if not test_nobeam:
             Bl_gauss_fwhm = hp.gauss_beam(
-                instrument[freq_tag]['beam']*arcmin2rad, lmax=3*nside, pol=True)[:, 1]
+                instrument[freq_tag]['beam']*arcmin2rad, lmax=3*nside_input, pol=True)[:, 1]
         else:
             print('TEST NO BEAM')
-            Bl_gauss_fwhm = np.ones(3*nside+1)
+            Bl_gauss_fwhm = np.ones(3*nside_input+1)
 
         if common_beam is not None:
             print('   common_beam!=0.0   ')
-            Bl_gauss_common = hp.gauss_beam(common_beam*arcmin2rad, lmax=3*nside, pol=True)[:, 1]
+            Bl_gauss_common = hp.gauss_beam(
+                common_beam*arcmin2rad, lmax=3*nside_input, pol=True)[:, 1]
         else:
             Bl_gauss_common = np.ones(Bl_gauss_fwhm.shape[0])
-        alms = hp.map2alm(tot_map, lmax=3*nside)
+        alms = hp.map2alm(tot_map, lmax=3*nside_input)
         # IPython.embed()
         alms_beamed = []
         for alm_ in alms:
             # hp.almxfl(alm_, Bl_gauss_common/Bl_gauss_fwhm, inplace=True)
             alms_beamed.append(hp.almxfl(alm_, Bl_gauss_common/Bl_gauss_fwhm, inplace=False))
         # tot_map_ = hp.alm2map(alms, nside)
+        # attention nside 512 pour les simu et ici on passe a 64 ATTETNION udgrade ajoute un autre beam
         tot_map = hp.alm2map(alms_beamed, nside)
         # tot_map = tot_map_
         # else:
@@ -256,6 +263,42 @@ def import_and_smooth_data(instrument, rank, common_beam=None, phase=1, path=Non
     return data
 
 
+def get_Cl_noise_matrix(instrument, noise_scaling, nside, nside_input, W, common_beam, lmin=lmin, lmax=lmax):
+    noise_lvl = np.array([instrument[f]['P_sens'] for f in instrument.keys()])
+    noise_lvl /= noise_scaling
+
+    beam_rad_common = common_beam * u.arcmin.to(u.rad)
+    beam_rad_deconv = np.array([instrument[f]['beam']
+                                for f in instrument.keys()]) * u.arcmin.to(u.rad)
+
+    noise_nl = []
+    for f in range(len(noise_lvl)):
+        Bl_common = hp.gauss_beam(beam_rad_common, lmax=lmax, pol=True)[:, 1][lmin:]  # [2:]
+        Bl_deconv = hp.gauss_beam(beam_rad_deconv[f], lmax=lmax, pol=True)[:, 1][lmin:]  # [2:]
+        Bl_pix = hp.gauss_beam(hp.nside2resol(nside), lmax=lmax, pol=True)[:, 1][lmin:]
+        Bl = Bl_common*Bl_pix/Bl_deconv
+
+        white_noise_f = (noise_lvl[f]*np.pi/60/180)**2 * np.ones(len(Bl))
+        # noise_nl.append(noise / (Bl**2))
+        noise_nl.append(white_noise_f * (Bl**2))
+    noise_nl = np.array(noise_nl)
+    # noise_nl = np.repeat(noise_nl, 2, 0)[..., lmin-2:]
+    noise_nl = np.repeat(noise_nl, 2, 0)  # [..., lmin:]
+
+    # nl_inv = 1/noise_nl
+    WtNW = np.einsum('fi, fl, fj -> lij', W.T, noise_nl, W.T)
+    # inv_AtNA = np.linalg.inv(AtNA)
+    noise_cl = WtNW.swapaxes(-3, -1)
+
+    Cl_noise = noise_cl[0, 0]
+
+    Cl_noise_matrix = np.zeros([2, 2, Cl_noise.shape[0]])
+    Cl_noise_matrix[0, 0] = Cl_noise
+    Cl_noise_matrix[1, 1] = Cl_noise
+
+    return Cl_noise_matrix
+
+
 def main():
 
     comm = MPI.COMM_WORLD
@@ -266,9 +309,11 @@ def main():
     print('MPI rank = ', rank_mpi)
     # phase = None
     phase = 1
-    for map_iter in range(1):
-        rank = 3*rank_mpi + map_iter
-        rank = 22
+    phase = 'test'
+    map_per_rank = 2
+    for map_iter in range(map_per_rank):
+        rank = map_per_rank*rank_mpi + map_iter
+        # rank = 22
         print('================================================')
         print("MAP NUMBER = ", rank)
         start = time.time()
@@ -280,11 +325,12 @@ def main():
         elif machine == 'idark':
             output_dir = '/home/jost/results/LB_phase1_fullsky_withbeam/' + str(rank).zfill(4) + '/'
         print('rank=', rank)
-        # print('OUTPUT DIR FIXED FOR LOCAL DEBUG!!!!')
+        print('OUTPUT DIR FIXED FOR LOCAL DEBUG!!!!')
         # output_dir = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/pipeline_data/debug_beam/'
         # output_dir = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/pipeline_data/debug_beam/'
         # output_dir = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/pipeline_data/debug_beam_LBsim/'
         # output_dir = '/home/jost/results/debug_beam_test/'
+        output_dir = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/pipeline_data/debug_mask_LBsim/'
         print('output_dir = ', output_dir)
 
         if not os.path.exists(output_dir):
@@ -308,7 +354,7 @@ def main():
         # mask = hp.ud_grade((hp.read_map(pixel_path+'code/data/'+'mask_LB.fits'), nside)
 
         print('WARNING: FULLSKY TEST')
-        '''
+        # '''
         if machine == 'NERSC':
             mask = hp.ud_grade(hp.read_map(
                 '/global/cscratch1/sd/josquin/HFI_Mask_GalPlane-apo0_2048_R2.00.fits', field=2), nside_out=nside)
@@ -318,11 +364,11 @@ def main():
                 field=2), nside_out=nside)
 
         mask[(mask != 0) * (mask != 1)] = 0
-        '''
+        # '''
         print('WARNING: LB PTEP POWER SPECTRA should be used?')
         print('WARNING: CHECK IF RIGHT MASK')
-        # mask = np.ones(mask.shape)
-        mask = np.ones(hp.nside2npix(nside))
+        mask = np.ones(mask.shape)
+        # mask = np.ones(hp.nside2npix(nside))
 
         # print(fsky)
         fsky = len(np.where(mask != 0)[0])*1.0/len(mask)
@@ -332,6 +378,7 @@ def main():
 
         aposize = 5.0
         apotype = 'Smooth'
+        # apodization should be done BEFORE udgrade
         mask_apo = nmt.mask_apodization(mask, aposize=aposize, apotype=apotype)
         print('time mask apo = ', time.time() - time_apo)
         time_import = time.time()
@@ -340,13 +387,13 @@ def main():
         # path_data = pixel_path+'code/'+'mock_LB_test_freq_maps_nonoise.npy'
 
         common_beam = 80.0
-        # scaling_factor_for_sensitivity_due_to_transfer_function = np.array([1.03538701, 1.49483298, 1.68544978, 1.87216344, 1.77112946, 1.94462893,
-        #                                                                     1.83405669, 1.99590729, 1.87252192, 2.02839885, 2.06834379, 2.09336487,
-        #                                                                     1.93022977, 1.98931453, 2.02184001, 2.0436672,  2.05440473, 2.04784698,
-        #                                                                     2.08458758, 2.10468234, 2.1148482, 2.13539999])
+        scaling_factor_for_sensitivity_due_to_transfer_function = np.array([1.03538701, 1.49483298, 1.68544978, 1.87216344, 1.77112946, 1.94462893,
+                                                                            1.83405669, 1.99590729, 1.87252192, 2.02839885, 2.06834379, 2.09336487,
+                                                                            1.93022977, 1.98931453, 2.02184001, 2.0436672,  2.05440473, 2.04784698,
+                                                                            2.08458758, 2.10468234, 2.1148482, 2.13539999])
         # common_beam = 180.0*60.0 / np.pi
         # common_beam = None
-        scaling_factor_for_sensitivity_due_to_transfer_function = np.ones(freq_number)
+        # scaling_factor_for_sensitivity_due_to_transfer_function = np.ones(freq_number)
 
         # print('WARNING: NO BEAM TEST')
         # common_beam = None
@@ -467,16 +514,21 @@ def main():
         # data = np.load(path_data)
         # freq_maps = data*mask
         # ddt = get_ddt(data, mask)
-        Cl_noise_matrix, A, W = from_spectra_to_cosmo(results_min.x, model_skm, sensitiviy_mode=sensitiviy_mode,
-                                                      one_over_f_mode=one_over_f_mode,
-                                                      beam_corrected=beam_correction,
-                                                      one_over_ell=one_over_ell,
-                                                      lmin=0, lmax=3*nside-1,
-                                                      common_beam=common_beam,
-                                                      scaling_factor=scaling_factor_for_sensitivity_due_to_transfer_function,
-                                                      test_nobeam=test_nobeam, INSTRU=INSTRU)
+        Cl_noise_matrix_AtNA, A, W = from_spectra_to_cosmo(results_min.x, model_skm, sensitiviy_mode=sensitiviy_mode,
+                                                           one_over_f_mode=one_over_f_mode,
+                                                           beam_corrected=beam_correction,
+                                                           one_over_ell=one_over_ell,
+                                                           lmin=0, lmax=3*nside-1,
+                                                           common_beam=common_beam,
+                                                           scaling_factor=np.ones(freq_number),
+                                                           test_nobeam=test_nobeam, INSTRU=INSTRU)
+        # IPython.embed()
+        Cl_noise_matrix = get_Cl_noise_matrix(
+            instrument_LB, scaling_factor_for_sensitivity_due_to_transfer_function, nside, 512, W, common_beam, lmin=0, lmax=3*nside-1)
+        # noise_map_after_compsep = hp.synfast([Cl_noise_matrix_after_comp_sep[0, 0]*0, Cl_noise_matrix_after_comp_sep[0, 0],
+        #                                       Cl_noise_matrix_after_comp_sep[1, 1], Cl_noise_matrix_after_comp_sep[0, 0]*0], nside)
         # scaling_factor=np.ones(freq_number) or scaling_factor_for_sensitivity_due_to_transfer_function
-
+        # IPython.embed()
         '''in from_spectra_to_cosmo() lmin=0 and lmax=3*nside so that bin_cell has the right ell range as input, indeed it expects those value. bin_cell is so initialised that it then takes care of having the desired lmin. Not necessarily the lmax as we typically set lmax < 3*nside but it is taken care of with indices_ellrange later on.'''
     # 3*nside-1,
         # ell_noise = np.linspace(0, 3*nside-1, 3*nside, dtype=int)
@@ -508,14 +560,18 @@ def main():
         # Cl_noise_matrix[1, 1] = Cl_noise
 
         print('Cl_noise_matrix shape=', Cl_noise_matrix.shape)
-        clean_CMB_map = W[:2].dot(freq_maps)
+        # common_beam = None
+        # data_deconv = import_and_smooth_data(
+        #     instrument_LB, rank, common_beam=None, phase=phase, path=path_data, test_nobeam=test_nobeam)
+        # clean_CMB_map = W[:2].dot(data_deconv)
+        clean_CMB_map = W[:2].dot(data)  # carte avec le beam commun, recheck if freqmaps equal
         np.save(output_dir+'output_cmb_map.npy', clean_CMB_map)
         clean_dust_map = W[2:4].dot(freq_maps)
         np.save(output_dir+'output_dust_map.npy', clean_dust_map)
         clean_synch_map = W[4:].dot(freq_maps)
         np.save(output_dir+'output_synch_map.npy', clean_synch_map)
 
-        purify_e = False
+        purify_e = True
         purify_b = False
         if purify_b and fsky > 0.9:
             print('WARNING: if full sky, purify_b should be FALSE')
@@ -524,13 +580,31 @@ def main():
         # common_beam = 80.0
         # common_beam = 80
         if common_beam is not None:
-            Bl_eff = hp.gauss_beam(np.radians(common_beam/60.0), lmax=3*nside+1, pol=True)[:, 1]
+            # apply W and 1/bl_freq (no correction for pixel as namaster does it himself)
+            # Bl_eff = hp.gauss_beam(np.radians(common_beam/60.0), lmax=3*nside+1, pol=True)[:, 1]
+            # Bl_eff_4k = hp.gauss_beam(np.radians(common_beam/60.0), lmax=4000-1, pol=True)[:, 1]
+            Bl_common = hp.gauss_beam(common_beam * u.arcmin.to(u.rad),
+                                      lmax=3*nside, pol=True)[:, 1]  # [2:]
+            # Bl_pix = hp.gauss_beam(hp.nside2resol(nside), lmax=3*nside, pol=True)[:, 1]
+            Bl_eff_list = []
+            for key in instrument_LB.keys():
+                Bl_deconv = hp.gauss_beam(
+                    instrument_LB[key]['beam'] * u.arcmin.to(u.rad), lmax=3*nside, pol=True)[:, 1]  # [2:]
+                Bl_eff_list.append(Bl_common/Bl_deconv)
+                Bl_eff_list.append(Bl_common/Bl_deconv)
+                # Bl_eff_list.append(Bl_common*Bl_pix/Bl_deconv)
+                # Bl_eff_list.append(Bl_common*Bl_pix/Bl_deconv)
+            Bl_eff_list = np.array(Bl_eff_list)
+            '''WARNING: we assume effective beam is the same for Q and U but
+               there are difference of the order of ~0.1% between the two!'''
+            Bl_eff = W.dot(Bl_eff_list)[0]
+            Bl_eff_4k = 1
         else:
             Bl_eff = np.ones(3*nside+2)
         # Bl_eff = np.ones(3*nside + 1)
 
         w = nmt.NmtWorkspace()
-        b = binning_definition(nside, lmin=lmin, lmax=lmax, fsky=fsky)
+        b = binning_definition(nside, fsky=fsky)
 
         # cltt, clee, clbb, clte = hp.read_cl(
         #     '/project/projectdirs/litebird/simulations/maps/birefringence_project_paper/Cls_Planck2018_for_PTEP_2020_r0.fits')[:, :4000]
@@ -542,36 +616,47 @@ def main():
         # cltt, clee, clbb, clte = hp.read_cl(
         #     '/project/projectdirs/litebird/simulations/maps/birefringence_project_paper/Cls_Planck2018_for_PTEP_2020_r0.fits')[:, :4000]
         mp_t_sim, mp_q_sim, mp_u_sim = hp.synfast(
-            [cltt, clee, clbb, clte], nside=nside, new=True, verbose=False)
-
+            [cltt*Bl_eff_4k**2, clee*Bl_eff_4k**2, clbb*Bl_eff_4k**2, clte*Bl_eff_4k**2, clte*Bl_eff_4k**2, clte*Bl_eff_4k**2], nside=nside, new=True, verbose=False)
         ell_eff_ = b.get_effective_ells()
-        # TODO:
         indices_ellrange = np.where((ell_eff_ >= lmin) & (ell_eff_ <= lmax))[0]
         ell_eff = ell_eff_[indices_ellrange]
         np.save(output_dir+'ell_eff.npy', ell_eff)
         np.save(output_dir+'indices_ellrange.npy', indices_ellrange)
-        # ell_eff = ell_eff_[(ell_eff_ >= lmin) & (ell_eff_ <= lmax)]
+
         print('test n_iter namaster')
         n_iter_namaster = 10  # default = 3
-        f2y0 = get_field(mp_q_sim, mp_u_sim, mask_apo, Bl_eff,
+        f2y0 = get_field(mp_q_sim, mp_u_sim, mask_apo, None,
                          purify_e=purify_e, purify_b=purify_b, n_iter=n_iter_namaster)
         w.compute_coupling_matrix(f2y0, f2y0, b, n_iter=n_iter_namaster)
 
         field = get_field(clean_CMB_map[0], clean_CMB_map[1], mask_apo, Bl_eff,
                           purify_e=purify_e, purify_b=purify_b, n_iter=n_iter_namaster)
         Cls_data = compute_master(field, field, w)[..., indices_ellrange]
+
         Cls_data_matrix = np.zeros((2, 2, len(Cls_data[0])))
         Cls_data_matrix[0, 0] = Cls_data[0]
         Cls_data_matrix[1, 1] = Cls_data[3]
         Cls_data_matrix[1, 0] = Cls_data[1]
         Cls_data_matrix[0, 1] = Cls_data[1]
 
-        # Cls_data = hp.anafast([clean_CMB_map[0]*0, clean_CMB_map[0],
-        #                        clean_CMB_map[1]])[:, lmin:lmax+1]
+        '''
+        field_noise = get_field(noise_map_after_compsep[1], noise_map_after_compsep[2], mask_apo, Bl_eff,
+                                purify_e=purify_e, purify_b=purify_b, n_iter=n_iter_namaster)
+        Cl_noise = compute_master(field_noise, field_noise, w)[..., indices_ellrange]
+        Cl_noise_matrix = np.zeros([2, 2, Cl_noise.shape[1]])
+        Cl_noise_matrix[0, 0] = Cl_noise[0]
+        Cl_noise_matrix[1, 1] = Cl_noise[0]
+        Cl_noise_matrix_bin = Cl_noise_matrix
+        '''
+        '''attention Cl_noise[3] (BB) is negligible, why?  '''
+        # IPython.embed()
+        # Cls_data = hp.anafast([clean_CMB_map[0]*0, clean_CMB_map[0], clean_CMB_map[1]])
+        # Cls_data = b.bin_cell(Cls_data)[:,indices_ellrange]
         # Cls_data_matrix[0, 0] = Cls_data[1]
         # Cls_data_matrix[1, 1] = Cls_data[2]
         # Cls_data_matrix[1, 0] = Cls_data[4]
         # Cls_data_matrix[0, 1] = Cls_data[4]
+
         np.save(output_dir+'Cls_data_matrix_fixedspec_debugnamaster.npy', Cls_data_matrix)
         # IPython.embed()
 
@@ -582,6 +667,7 @@ def main():
 
         Cl_noise_matrix_bin[0, 0] = Cl_noise_matrix_bin_[0]
         Cl_noise_matrix_bin[1, 1] = Cl_noise_matrix_bin_[0]
+
         np.save(output_dir+'Cl_noise_matrix_bin.npy', Cl_noise_matrix_bin)
         np.save(output_dir+'Cl_noise_matrix_beforebin.npy', Cl_noise_matrix)
 
@@ -619,36 +705,7 @@ def main():
         print('')
         print('')
         print('time cosmo min =', time.time()-time_cosmo_min)
-        '''
-        r_grid = np.linspace(bounds_cosmo[0][0], bounds_cosmo[0][1], 1000)
-        like_grid_r = []
-        for r in r_grid:
-            param = [r, 0]
-            like_grid_r.append(cosmo_like_data(param, Cl_noise_matrix_bin,
-                                               Cls_data_matrix, b, fsky, True, indices_ellrange))
-        like_grid_r = np.array(like_grid_r)
 
-        plt.plot(r_grid, like_grid_r)
-        plt.savefig(output_dir+'like_grid_r.png')
-        plt.close()
-
-        beta_grid = np.linspace(bounds_cosmo[1][0], bounds_cosmo[1][1], 1000)
-        like_grid_beta = []
-        for beta in beta_grid:
-            param = [0, beta]
-            like_grid_beta.append(cosmo_like_data(param, Cl_noise_matrix_bin,
-                                                  Cls_data_matrix, b, fsky, True, indices_ellrange))
-        like_grid_beta = np.array(like_grid_beta)
-        plt.plot(beta_grid, like_grid_beta)
-        plt.savefig(output_dir+'like_grid_beta.png')
-        plt.close()
-        '''
-        # for rank in range(99):
-        #     # print(rank)
-        # output_dir = pixel_path+'results_and_data/pipeline_data/test_mock/' + \
-        #     str(rank).zfill(4) + '_fullsky_nobeam/'
-        # print(output_dir)
-        # res_cosmo = np.load(output_dir+'results_cosmo.npy')
         time_plot = time.time()
         Cl_cmb_model = np.zeros([4, Cl_fid['EE'].shape[0]])
         Cl_cmb_model[1] = copy.deepcopy(Cl_fid['EE'])
@@ -726,6 +783,42 @@ def main():
 
     exit()
 
+
+######################################################
+# MAIN CALL
+if __name__ == "__main__":
+    main()
+
+    '''
+        r_grid = np.linspace(bounds_cosmo[0][0], bounds_cosmo[0][1], 1000)
+        like_grid_r = []
+        for r in r_grid:
+            param = [r, 0]
+            like_grid_r.append(cosmo_like_data(param, Cl_noise_matrix_bin,
+                                               Cls_data_matrix, b, fsky, True, indices_ellrange))
+        like_grid_r = np.array(like_grid_r)
+
+        plt.plot(r_grid, like_grid_r)
+        plt.savefig(output_dir+'like_grid_r.png')
+        plt.close()
+
+        beta_grid = np.linspace(bounds_cosmo[1][0], bounds_cosmo[1][1], 1000)
+        like_grid_beta = []
+        for beta in beta_grid:
+            param = [0, beta]
+            like_grid_beta.append(cosmo_like_data(param, Cl_noise_matrix_bin,
+                                                  Cls_data_matrix, b, fsky, True, indices_ellrange))
+        like_grid_beta = np.array(like_grid_beta)
+        plt.plot(beta_grid, like_grid_beta)
+        plt.savefig(output_dir+'like_grid_beta.png')
+        plt.close()
+        '''
+    # for rank in range(99):
+    #     # print(rank)
+    # output_dir = pixel_path+'results_and_data/pipeline_data/test_mock/' + \
+    #     str(rank).zfill(4) + '_fullsky_nobeam/'
+    # print(output_dir)
+    # res_cosmo = np.load(output_dir+'results_cosmo.npy')
     '''
     stat, bias, var, Cl_fg, Cl_cmb, Cl_residuals_matrix, ell, W_cmb, dW_cmb, ddW_cmb = get_residuals(
         model_results, fg_freq_maps, sigma_spectral, lmin, lmax, fsky, params,
@@ -754,10 +847,3 @@ def main():
     np.save('spec_samples.npy', spec_samples)
     np.save('spec_samples_raw.npy', spec_samples_raw)
     '''
-    exit()
-
-
-######################################################
-# MAIN CALL
-if __name__ == "__main__":
-    main()
