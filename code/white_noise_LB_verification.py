@@ -15,7 +15,7 @@ noise_path_NERSC = '/global/cfs/cdirs/litebird/simulations/maps/PTEP_20200915_co
 noise_path_idark = '/lustre/work/jost/simulations/LB_phase1/noise_maps/noise/'
 noise_path = noise_path_idark
 nside_output = 64
-nside_input = 64  # 64 is for debug, true is 512
+nside_input = 512  # 64 is for debug, true is 512
 common_beam = 80
 arcmin2rad = 1 * u.arcmin.to(u.rad)
 Bl_gauss_common = hp.gauss_beam(common_beam*arcmin2rad, lmax=3*nside_input, pol=True)[:, 1]
@@ -44,20 +44,24 @@ if nsim_tot % size != 0:
 
 start_total_loop = time.time()
 std_list = []
-for iter in range(1):  # nsim_tot//size):
+for iter in range(nsim_tot//size):
     sim_num = rank_mpi * (nsim_tot//size) + iter
     print('ITER #', iter)
     print('sim_num =', sim_num)
     std_list_freq = []
     freq_counter = 0
     start_freq_loop = time.time()
+
+    '''noise cov could be done in a spearate loop, it is overwritten at ever step here...'''
+    noise_cov_rescale_sqrt = []
+    noise_cov_sqrt = []
     for freq_tag in instrument_LB.keys():
         print(freq_tag)
         sens_rescale = instrument_LB[freq_tag]['P_sens'] / \
             scaling_factor_for_sensitivity_due_to_transfer_function[freq_counter]
-        noise_cov_rescale_sqrt = (sens_rescale / hp.nside2resol(nside_output, arcmin=True))
-        noise_cov_sqrt = (instrument_LB[freq_tag]['P_sens'] /
-                          hp.nside2resol(nside_output, arcmin=True))
+        noise_cov_rescale_sqrt.append((sens_rescale / hp.nside2resol(nside_output, arcmin=True)))
+        noise_cov_sqrt.append((instrument_LB[freq_tag]['P_sens'] /
+                               hp.nside2resol(nside_output, arcmin=True)))
 
         Bl_gauss_fwhm = hp.gauss_beam(
             instrument_LB[freq_tag]['beam']*arcmin2rad, lmax=3*nside_input, pol=True)[:, 1]
@@ -68,6 +72,7 @@ for iter in range(1):  # nsim_tot//size):
         print(path_noise_map)
         if not os.path.exists(path_noise_map):
             print('PATH DOESN\'T EXIST')
+            std_list_freq.append(None)
             continue
         noise_map_totfield = hp.read_map(path_noise_map, field=(0, 1, 2))
         alms = hp.map2alm(noise_map_totfield, lmax=3*nside_input)
@@ -77,27 +82,30 @@ for iter in range(1):  # nsim_tot//size):
         output_map = hp.alm2map(alms_beamed, nside_output)
         std_list_freq.append(np.std(output_map))
         freq_counter += 1
+    noise_cov_rescale_sqrt = np.array(noise_cov_rescale_sqrt)
+    noise_cov_sqrt = np.array(noise_cov_sqrt)
+    std_list.append(std_list_freq)
     print('time in freq loop=', time.time() - start_freq_loop)
     print('average time for one freq loop=', (time.time() - start_freq_loop)/freq_counter)
 
-    std_list.append(std_list_freq)
 print('time in global loop=', time.time() - start_total_loop)
 
 
 std_list = np.array(std_list)
+print('nsim_tot//size = ', nsim_tot//size)
+print('iter+1 = ', iter+1)
 print('defined recbuff shape:', size, nsim_tot//size, freq_counter)
-IPython.embed()
+# IPython.embed()
 recvbuf = None
 if rank_mpi == 0:
-    recvbuf = np.empty([size, nsim_tot//size, freq_counter], dtype='d')
+    recvbuf = np.empty([size, iter+1, freq_counter], dtype='d')
 
 comm.Gather(std_list, recvbuf, root=0)
-if rank_mpi == 0:
-    for i in range(size):
-        assert np.allclose(recvbuf[i, :], i)
 
 if rank_mpi == 0:
     # TODO: attention au differentes frequences
-    print(np.mean(recvbuf)/noise_cov_rescale_sqrt)
-    np.save('results_std_noise_beam_LFT_40.npy', recvbuf)
-    np.save('results_meanstd_beam_LFT_40_over_noisecov40', np.mean(recvbuf)/noise_cov_rescale_sqrt)
+    print(np.mean(recvbuf, axis=(0, 1))/noise_cov_rescale_sqrt)
+    np.save('results_std_noise_beam.npy', recvbuf)
+    np.save('results_meanstd_beam_over_rescalednoisecov',
+            np.mean(recvbuf, axis=(0, 1))/noise_cov_rescale_sqrt)
+    np.save('results_meanstd_beam_over_noisecov', np.mean(recvbuf, axis=(0, 1))/noise_cov_sqrt)
