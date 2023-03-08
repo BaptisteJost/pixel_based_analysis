@@ -80,7 +80,7 @@ for iter in range(nsim_tot//size):
         for alm_ in alms:
             alms_beamed.append(hp.almxfl(alm_, Bl_gauss_common/Bl_gauss_fwhm, inplace=False))
         output_map = hp.alm2map(alms_beamed, nside_output)
-        std_list_freq.append(np.std(output_map))
+        std_list_freq.append([np.std(output_map[1]), np.std(output_map[2])])
         freq_counter += 1
     noise_cov_rescale_sqrt = np.array(noise_cov_rescale_sqrt)
     noise_cov_sqrt = np.array(noise_cov_sqrt)
@@ -92,14 +92,15 @@ print('time in global loop=', time.time() - start_total_loop)
 
 
 std_list = np.array(std_list)
+print('std list shape = ', std_list.shape)
 print('nsim_tot//size = ', nsim_tot//size)
 print('iter+1 = ', iter+1)
-print('defined recbuff shape:', size,  iter+1, freq_counter)
-# IPython.embed()
+print('defined recbuff shape:', size,  iter+1, freq_counter, 2)
+IPython.embed()
 recvbuf = None
 if rank_mpi == 0:
     print('blah 0')
-    recvbuf = np.empty([size, iter+1, freq_counter], dtype='d')
+    recvbuf = np.empty([size, iter+1, freq_counter, 2], dtype='d')
 
 print('gather')
 comm.Gather(std_list, recvbuf, root=0)
