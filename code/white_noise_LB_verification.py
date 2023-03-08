@@ -15,7 +15,7 @@ noise_path_NERSC = '/global/cfs/cdirs/litebird/simulations/maps/PTEP_20200915_co
 noise_path_idark = '/lustre/work/jost/simulations/LB_phase1/noise_maps/noise/'
 noise_path = noise_path_idark
 nside_output = 64
-nside_input = 64  # 64 is for debug, true is 512
+nside_input = 512  # 64 is for debug, true is 512
 common_beam = 80
 arcmin2rad = 1 * u.arcmin.to(u.rad)
 Bl_gauss_common = hp.gauss_beam(common_beam*arcmin2rad, lmax=3*nside_input, pol=True)[:, 1]
@@ -59,9 +59,10 @@ for iter in range(nsim_tot//size):
         print(freq_tag)
         sens_rescale = instrument_LB[freq_tag]['P_sens'] / \
             scaling_factor_for_sensitivity_due_to_transfer_function[freq_counter]
-        noise_cov_rescale_sqrt.append((sens_rescale / hp.nside2resol(nside_output, arcmin=True)))
-        noise_cov_sqrt.append((instrument_LB[freq_tag]['P_sens'] /
-                               hp.nside2resol(nside_output, arcmin=True)))
+        noise_cov_rescale_sqrt.append(
+            [(sens_rescale / hp.nside2resol(nside_output, arcmin=True))]*2)
+        noise_cov_sqrt.append([(instrument_LB[freq_tag]['P_sens'] /
+                                hp.nside2resol(nside_output, arcmin=True))]*2)
 
         Bl_gauss_fwhm = hp.gauss_beam(
             instrument_LB[freq_tag]['beam']*arcmin2rad, lmax=3*nside_input, pol=True)[:, 1]
@@ -96,7 +97,7 @@ print('std list shape = ', std_list.shape)
 print('nsim_tot//size = ', nsim_tot//size)
 print('iter+1 = ', iter+1)
 print('defined recbuff shape:', size,  iter+1, freq_counter, 2)
-IPython.embed()
+# IPython.embed()
 recvbuf = None
 if rank_mpi == 0:
     print('blah 0')
