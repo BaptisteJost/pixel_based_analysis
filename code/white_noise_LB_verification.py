@@ -44,7 +44,7 @@ if nsim_tot % size != 0:
 
 start_total_loop = time.time()
 std_list = []
-for iter in range(2):  # nsim_tot//size):
+for iter in range(nsim_tot//size):
     sim_num = rank_mpi * (nsim_tot//size) + iter
     print('ITER #', iter)
     print('sim_num =', sim_num)
@@ -94,7 +94,7 @@ print('time in global loop=', time.time() - start_total_loop)
 std_list = np.array(std_list)
 print('nsim_tot//size = ', nsim_tot//size)
 print('iter+1 = ', iter+1)
-print('defined recbuff shape:', size, nsim_tot//size, freq_counter)
+print('defined recbuff shape:', size,  iter+1, freq_counter)
 # IPython.embed()
 recvbuf = None
 if rank_mpi == 0:
