@@ -44,7 +44,7 @@ if nsim_tot % size != 0:
 
 start_total_loop = time.time()
 std_list = []
-for iter in range(nsim_tot//size):
+for iter in range(2):  # nsim_tot//size):
     sim_num = rank_mpi * (nsim_tot//size) + iter
     print('ITER #', iter)
     print('sim_num =', sim_num)
@@ -101,7 +101,9 @@ if rank_mpi == 0:
     print('blah 0')
     recvbuf = np.empty([size, iter+1, freq_counter], dtype='d')
 
+print('gather')
 comm.Gather(std_list, recvbuf, root=0)
+print('gather 2')
 
 if rank_mpi == 0:
     print('blah 0 v2')
