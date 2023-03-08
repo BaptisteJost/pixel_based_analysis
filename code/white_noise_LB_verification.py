@@ -1,3 +1,4 @@
+import IPython
 import healpy as hp
 import numpy as np
 from astropy import units as u
@@ -14,7 +15,7 @@ noise_path_NERSC = '/global/cfs/cdirs/litebird/simulations/maps/PTEP_20200915_co
 noise_path_idark = '/lustre/work/jost/simulations/LB_phase1/noise_maps/noise/'
 noise_path = noise_path_idark
 nside_output = 64
-nside_input = 512
+nside_input = 64  # 64 is for debug, true is 512
 common_beam = 80
 arcmin2rad = 1 * u.arcmin.to(u.rad)
 Bl_gauss_common = hp.gauss_beam(common_beam*arcmin2rad, lmax=3*nside_input, pol=True)[:, 1]
@@ -43,7 +44,7 @@ if nsim_tot % size != 0:
 
 start_total_loop = time.time()
 std_list = []
-for iter in range(nsim_tot//size):
+for iter in range(1):  # nsim_tot//size):
     sim_num = rank_mpi * (nsim_tot//size) + iter
     print('ITER #', iter)
     print('sim_num =', sim_num)
@@ -84,15 +85,17 @@ print('time in global loop=', time.time() - start_total_loop)
 
 
 std_list = np.array(std_list)
-
+print('defined recbuff shape:', size, nsim_tot//size, freq_counter)
+IPython.embed()
 recvbuf = None
 if rank_mpi == 0:
-    recvbuf = np.empty([size, nsim_tot//size], dtype='d')
+    recvbuf = np.empty([size, nsim_tot//size, freq_counter], dtype='d')
 
 comm.Gather(std_list, recvbuf, root=0)
 if rank_mpi == 0:
     for i in range(size):
         assert np.allclose(recvbuf[i, :], i)
+
 if rank_mpi == 0:
     # TODO: attention au differentes frequences
     print(np.mean(recvbuf)/noise_cov_rescale_sqrt)
