@@ -1010,13 +1010,20 @@ def constrained_cosmo(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb,
     first_term = np.sum(np.trace(first_term_ell))
 
     # logdetC = np.sum(dof*np.log(np.abs(np.linalg.det(Cl_model_total.T))))
+    # print('arg: ', r, beta, pivot)
+    # print('Cl_model_total[:,: 100]', Cl_model_total[:, : 100])
+    # print('np.linalg.det(Cl_model_total.T)[100]', np.linalg.det(Cl_model_total.T)[100])
     logdetC = np.sum(dof*np.log(np.linalg.det(Cl_model_total.T)))
+    # print('logdetC', logdetC)
     # print('(pivot-pivot_true)', (pivot-pivot_true))
     # print('A', A)
     # print('radek_jost_prior=', radek_jost_prior)
     # print('first_term', first_term)
     # print('logdetC', logdetC)
     likelihood = first_term + logdetC + radek_jost_prior
+    # import math
+    # if math.isnan(likelihood):
+    #     IPython.embed()
     if not minimisation:
         return -likelihood/2
     else:
@@ -1035,10 +1042,12 @@ def get_Cl_cmbBB(Alens=1., r=0.001, path_BB='.'):
     return power_spectrum
 
 
-def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2, instrument='SAT', onefreqtest=False):
+def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2, instrument='SAT',
+                 onefreqtest=False, t_obs_years=5, SAC_yrs_LF=1, model_skm=None):
     if instrument == 'SAT':
         V3_results = V3.so_V3_SA_noise(sensitiviy_mode, one_over_f_mode,
-                                       SAC_yrs_LF=1, f_sky=fsky, ell_max=lmax, beam_corrected=True)
+                                       SAC_yrs_LF=SAC_yrs_LF, f_sky=fsky, ell_max=lmax,
+                                       beam_corrected=True, t_obs_years=t_obs_years)
         noise_nl = np.repeat(V3_results[1], 2, 0)
         if onefreqtest:
             noise_nl = np.repeat(V3_results[1], 2, 0)[4:6]
@@ -1058,6 +1067,33 @@ def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2, instrument
         noise_nl = np.array(noise_nl)
         noise_nl = np.repeat(noise_nl, 2, 0)
         # noise_nl = (noise_lvl*np.pi/60/180)**2 * ell_noise
+    if instrument == 'SAT+Planck':
+        V3_results = V3.so_V3_SA_noise(sensitiviy_mode, one_over_f_mode,
+                                       SAC_yrs_LF=SAC_yrs_LF, f_sky=fsky, ell_max=lmax,
+                                       beam_corrected=True, t_obs_years=t_obs_years)
+        ell_noise = V3_results[0]
+        # noise_nl = np.repeat(V3_results[1], 2, 0)
+        if SAC_yrs_LF == 0:  # removing two first frequencies as LF is off
+            N_ell = V3_results[1][2:]
+        else:
+            N_ell = V3_results[1]
+        noise_nl = np.repeat(N_ell, 2, 0)[..., lmin-2:]
+        planck_noise_lvl = model_skm.planck_sens_p  # in uk-arcmin
+        # as it is the sensitivity for polarisation already, no sqrt(2) factor needed
+        planck_noise_lvl *= np.pi / 180 / 60  # from arcmin to rad
+        # rescaling to match SO sky fraction
+        f_sky_planck = 1  # with what fsky were the noise lvl computed ?
+        planck_noise_lvl *= np.sqrt(fsky) / np.sqrt(f_sky_planck)
+
+        planck_nl_nobeam = planck_noise_lvl**2 * np.ones(len(ell_noise))
+        planck_beam_rad = model_skm.planck_beams * u.arcmin.to(u.rad)
+        planck_nl = []
+        for f in range(len(planck_beam_rad)):
+            Bl = hp.gauss_beam(planck_beam_rad[f], lmax=1000)[2:]
+            planck_nl.append(planck_nl_nobeam[f] / Bl**2)
+        planck_nl = np.array(planck_nl)
+        planck_nl = np.repeat(planck_nl, 2, 0)
+        noise_nl = np.append(noise_nl, planck_nl)
 
     elif instrument == 'LiteBIRD':
         print('WARNING NO 1/F FOR NOW !! (get_noise_Cl)')

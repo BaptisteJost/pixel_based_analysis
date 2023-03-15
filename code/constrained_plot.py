@@ -1,15 +1,21 @@
-from config import *
-import argparse
-import IPython
-import matplotlib.lines as mlines
-from astropy import units as u
-import copy
-import numpy as np
-from getdist.gaussian_mixtures import GaussianND
-from getdist import plots, MCSamples
-import matplotlib.pyplot as plt
-from full_plots import plot_options
+import sys
 from os.path import exists
+from full_plots import plot_options
+import matplotlib.pyplot as plt
+from getdist import plots, MCSamples
+from getdist.gaussian_mixtures import GaussianND
+import numpy as np
+import copy
+from astropy import units as u
+import matplotlib.lines as mlines
+import IPython
+configimport argparse
+
+path_config = '/home/baptiste/Documents/these/pixel_based_analysis/code/config_files'
+sys.path.append(path_config)
+
+if True:  # this is just so that my autotpep8 doesn't put the import above the sys.path.append ...
+    from config_SO_SAT_5yr_2yLF import *
 
 
 def main():
@@ -179,7 +185,7 @@ def main():
     options_dict['contour_ls'] = []
     title_limit_spectral = 0
 
-    if spectral_MCMC_flag:
+    if exists(save_path+'samples_spectral.npy'):
         spectral_sample = np.load(save_path+'samples_spectral.npy')
         spectral_sample[:, :5] *= rad2deg
         distsamples = MCSamples(samples=spectral_sample, names=labels, labels=labels,
@@ -218,6 +224,8 @@ def main():
         error_str = error_str_init.format(np.sqrt(cov_deg[i, i]))
         print('error str ', error_str)
         error_len = len(error_str)
+        if error_len-2 < 0:
+            error_len = 2
         mean_str = '{0:.'+str(error_len-2)+'f}'
         print('mean ', mean_str)
         tot_str = ' = '+mean_str.format(spectral_estimation[i])+'\\pm'+error_str

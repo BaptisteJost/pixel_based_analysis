@@ -21,6 +21,7 @@ from residuals import get_SFN, get_diff_list, get_diff_diff_list,\
     multi_freq_get_sky_fg
 from residuals import get_W, get_ys_Cls
 from bjlib import V3calc as V3
+import healpy as hp
 
 # from multiprocessing import Pool
 # from schwimmbad import MPIPool
@@ -66,7 +67,7 @@ def spectral_sampling(spectral_params, ddt, model_skm, total_prior_matrix, prior
         return (spectral_like - Prior)/2
 
 
-def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_f_mode, beam_corrected, one_over_ell, lmin, lmax, common_beam=None, scaling_factor=None, test_nobeam=False, INSTRU='LiteBIRD'):
+def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_f_mode, beam_corrected, one_over_ell, lmin, lmax, common_beam=None, scaling_factor=None, test_nobeam=False, INSTRU='LiteBIRD', t_obs_years=5, SAC_yrs_LF=1):
     freq_number = model_skm.frequencies.shape[0]
     angle_eval = spectral_params[:freq_number]*u.rad
     fg_params = spectral_params[freq_number:freq_number+2]
@@ -95,7 +96,9 @@ def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_
     '''
     if INSTRU == 'SAT':
         V3_results = V3.so_V3_SA_noise(sensitiviy_mode, one_over_f_mode,
-                                       SAC_yrs_LF=1, f_sky=fsky, ell_max=lmax+1, beam_corrected=True)
+                                       SAC_yrs_LF=SAC_yrs_LF, f_sky=fsky,
+                                       ell_max=lmax+1, beam_corrected=True,
+                                       t_obs_years=t_obs_years)
         # noise_nl = np.repeat(V3_results[1], 2, 0)
         if one_over_ell:
             noise_nl = np.repeat(V3_results[1], 2, 0)[..., lmin-2:]
@@ -103,6 +106,42 @@ def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_
             noise_nl = np.repeat(V3_results[-1], 2, 0)[..., lmin-2:]
 
         # ell_noise = V3_results[0]
+    if INSTRU == 'SAT+Planck':
+        V3_results = V3.so_V3_SA_noise(sensitiviy_mode, one_over_f_mode,
+                                       SAC_yrs_LF=SAC_yrs_LF, f_sky=fsky,
+                                       ell_max=lmax+1, beam_corrected=True,
+                                       t_obs_years=t_obs_years)
+        ell_noise = V3_results[0]
+
+        if one_over_ell:  # option to have only white noise
+            if SAC_yrs_LF == 0:  # removing two first frequencies as LF is off
+                N_ell = V3_results[1][2:]
+            else:
+                N_ell = V3_results[1]
+            noise_nl = np.repeat(N_ell, 2, 0)[..., lmin-2:]
+        else:
+            if SAC_yrs_LF == 0:  # removing two first frequencies as LF is off
+                N_ell = V3_results[-1][2:]
+            else:
+                N_ell = V3_results[-1]
+            noise_nl = np.repeat(N_ell, 2, 0)[..., lmin-2:]
+
+        planck_noise_lvl = model_skm.planck_sens_p  # in uk-arcmin
+        # as it is the sensitivity for polarisation already, no sqrt(2) factor needed
+        planck_noise_lvl *= np.pi / 180 / 60  # from arcmin to rad
+        # rescaling to match SO sky fraction
+        f_sky_planck = 1  # with what fsky were the noise lvl computed ?
+        planck_noise_lvl *= np.sqrt(fsky) / np.sqrt(f_sky_planck)
+
+        planck_nl_nobeam = planck_noise_lvl**2 * np.ones(len(ell_noise))
+        planck_beam_rad = model_skm.planck_beams * u.arcmin.to(u.rad)
+        planck_nl = []
+        for f in range(len(planck_beam_rad)):
+            Bl = hp.gauss_beam(planck_beam_rad[f], lmax=1000)[2:]
+            planck_nl.append(planck_nl_nobeam[f] / Bl**2)
+        planck_nl = np.array(planck_nl)
+        planck_nl = np.repeat(planck_nl, 2, 0)
+        noise_nl = np.append(noise_nl, planck_nl)
 
     elif INSTRU == 'Planck':
         instru_planck = get_instrument('planck_P')

@@ -420,7 +420,8 @@ def main():
         # ddt = get_ddt(data, mask)
         # data = import_and_smooth_data(instrument_LB, rank, common_beam=common_beam, phase=phase)
         data = import_and_smooth_data(
-            instrument_LB, rank, common_beam=common_beam, phase=phase, path=path_data, test_nobeam=test_nobeam)
+            instrument_LB, rank, common_beam=common_beam, phase=phase,
+            path=path_data, test_nobeam=test_nobeam)
         freq_maps = data*mask
         # freq_maps *= mask
         ddt = get_ddt(data, mask)
