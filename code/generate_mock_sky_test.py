@@ -86,8 +86,8 @@ else:
     print(machine, ' doesn\'t have a specified output directory ')
 
 print('output dir = ', output_dir)
-
-for i in range(99):
+IPython.embed()
+for i in range(100):
     # map_CMB = hp.synfast(cmb_spectra, nside, new=True)[1:]
     print('generating map #', i)
     freq_maps = []

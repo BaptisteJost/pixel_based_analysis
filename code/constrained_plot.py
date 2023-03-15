@@ -9,13 +9,13 @@ import copy
 from astropy import units as u
 import matplotlib.lines as mlines
 import IPython
-configimport argparse
+import argparse
 
-path_config = '/home/baptiste/Documents/these/pixel_based_analysis/code/config_files'
+path_config = './config_files'
 sys.path.append(path_config)
 
 if True:  # this is just so that my autotpep8 doesn't put the import above the sys.path.append ...
-    from config_SO_SAT_5yr_2yLF import *
+    from config_test import *
 
 
 def main():
@@ -30,7 +30,7 @@ def main():
 
     rad2deg = (1*u.rad).to(u.deg).value
 
-    plt.switch_backend("Qt5Agg")
+    # plt.switch_backend("Qt5Agg")
 
     labels = [r'r', r'{\beta_b}', r'{\alpha^{\rm{ref}}}']
 
