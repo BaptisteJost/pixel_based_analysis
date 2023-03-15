@@ -1,4 +1,4 @@
-from codecarbon import EmissionsTracker
+# from codecarbon import EmissionsTracker
 import IPython
 from astropy import units as u
 import argparse
@@ -22,7 +22,8 @@ from emcee import EnsembleSampler
 # from config import *
 import sys
 
-path_config = '/home/baptiste/Documents/these/pixel_based_analysis/code/config_files'
+# path_config = '/home/baptiste/Documents/these/pixel_based_analysis/code/config_files'
+path_config = './config_files'
 sys.path.append(path_config)
 
 if True:  # this is just so that my autotpep8 doesn't put the import above the sys.path.append ...
