@@ -150,7 +150,7 @@ def get_PI2(pivot, pivot_angle_index, eval_angles, input_pivot, prior_matrix, in
     return term1, term2
 
 
-def prior_grid(pivot, eval_angles, true_miscal_angles, total_prior_matrix, pivot_angle_index):
+def prior_grid(pivot, eval_angles, true_miscal_angles, total_prior_matrix, pivot_angle_index, inv_sigma_miscal):
     prior_matrix = np.delete(
         np.delete(total_prior_matrix, pivot_angle_index, 0), pivot_angle_index, 1)[:-2, :-2]
     prior_element_pivot = total_prior_matrix[pivot_angle_index, pivot_angle_index]
@@ -394,7 +394,8 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
     '''Residuals computation'''
     stat, bias, var, Cl_fg, Cl_cmb, Cl_residuals_matrix, ell, W_cmb, dW_cmb, ddW_cmb = get_residuals(
         model_results, fg_freq_maps, sigma_spectral, lmin, lmax, fsky, params,
-        cmb_spectra=spectra_true, true_A_cmb=model_data.mix_effectiv[:, :2], pivot_angle_index=pivot_angle_index)
+        cmb_spectra=spectra_true, true_A_cmb=model_data.mix_effectiv[:, :2],
+        pivot_angle_index=pivot_angle_index)
 
     WA_cmb = W_cmb.dot(model_results.mix_effectiv[:, :2])
     dWA_cmb = dW_cmb.dot(model_results.mix_effectiv[:, :2])
@@ -405,7 +406,8 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
     Cl_noise, ell_noise = get_noise_Cl(
         model_results.mix_effectiv, lmax+1, fsky,
         sensitiviy_mode, one_over_f_mode,
-        instrument=INSTRU, onefreqtest=1-spectral_flag, t_obs_years=t_obs_years, SAC_yrs_LF=SAC_yrs_LF)
+        instrument=INSTRU, onefreqtest=1-spectral_flag, t_obs_years=t_obs_years,
+        SAC_yrs_LF=SAC_yrs_LF, model_skm=model_results)
     Cl_noise = add_noise*Cl_noise[lmin-2:]
     ell_noise = ell_noise[lmin-2:]
     Cl_noise_matrix = np.zeros([2, 2, Cl_noise.shape[0]])
@@ -765,7 +767,7 @@ term3_list = []
 termcst_list = []
 for i in pivot_range:
     term1, term2, term3, termcst = prior_grid(i, angle_eval, true_miscal_angles,
-                                              prior_matrix, pivot_angle_index)
+                                              prior_matrix, pivot_angle_index, inv_sigma_miscal)
     term1_list.append(term1)
     term2_list.append(term2)
     term3_list.append(term3)

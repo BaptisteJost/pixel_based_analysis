@@ -1085,15 +1085,15 @@ def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2, instrument
         f_sky_planck = 1  # with what fsky were the noise lvl computed ?
         planck_noise_lvl *= np.sqrt(fsky) / np.sqrt(f_sky_planck)
 
-        planck_nl_nobeam = planck_noise_lvl**2 * np.ones(len(ell_noise))
         planck_beam_rad = model_skm.planck_beams * u.arcmin.to(u.rad)
         planck_nl = []
         for f in range(len(planck_beam_rad)):
-            Bl = hp.gauss_beam(planck_beam_rad[f], lmax=1000)[2:]
+            planck_nl_nobeam = planck_noise_lvl[f]**2 * np.ones(len(ell_noise))
+            Bl = hp.gauss_beam(planck_beam_rad[f], lmax=lmax-1)[2:]
             planck_nl.append(planck_nl_nobeam[f] / Bl**2)
         planck_nl = np.array(planck_nl)
         planck_nl = np.repeat(planck_nl, 2, 0)
-        noise_nl = np.append(noise_nl, planck_nl)
+        noise_nl = np.append(noise_nl, planck_nl, 0)
 
     elif instrument == 'LiteBIRD':
         print('WARNING NO 1/F FOR NOW !! (get_noise_Cl)')
