@@ -341,11 +341,11 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
         tol=1e-18, options={'maxiter': 1000}, method='L-BFGS-B',
         bounds=bounds[1:])
     print(results_min)
-    # IPython.embed()
     print('results - spectral_true = ',
           results_min.x[:freq_number-1] - np.delete(true_miscal_angles, pivot_angle_index).value)
     print('results - spectral_true = ', results_min.x[-2] - 1.54)
     print('results - spectral_true = ', results_min.x[-1] + 3)
+    IPython.embed()
     results_min_array.append(results_min.x)
 
     angle_eval = np.insert(results_min.x[:freq_number-1],
