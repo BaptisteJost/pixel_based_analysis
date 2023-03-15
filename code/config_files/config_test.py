@@ -12,9 +12,10 @@ from datetime import date
 machine = 'local'
 path_NERSC = '/global/homes/j/jost/these/pixel_based_analysis/results_and_data/run02032021/'
 path_local = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/MCMCrerun_article/'
-
+path_idark = ''
 path_BB_local = '/home/baptiste/BBPipe'
 path_BB_NERSC = '/global/homes/j/jost/BBPipe'
+path_BB_idark = '/home/jost/code/BBPipe'
 
 if machine == 'local':
     pixel_path = '/home/baptiste/Documents/these/pixel_based_analysis/'
@@ -24,6 +25,9 @@ elif machine == 'NERSC':
     pixel_path = '/global/u2/j/jost/these/pixel_based_analysis/'
     path = path_NERSC
     path_BB = path_BB_NERSC
+elif machine == 'idark':
+    pixel_path = '/home/jost/code/pixel_based_analysis/'
+    path_BB = path_BB_idark
 else:
     print('ERROR : Machine not recognized')
     exit()
@@ -31,6 +35,8 @@ else:
 save_path_ = pixel_path + 'results_and_data/full_pipeline/debug_LB/' + \
     date.today().strftime('%Y%m%d') + '_constrained_'
 save_path_ = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/SAT_time_evolution_study/'
+if machine != 'idark':
+    save_path_ = '/home/jost/results/SAT_time_evolution_study/'
 
 '''Cosmology params'''
 r_true = 0.0
