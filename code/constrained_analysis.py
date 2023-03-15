@@ -361,7 +361,8 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
         spectral_params=[results_min.x[-2], 20, results_min.x[-1]],
         sky_model='c1s0d0', sensitiviy_mode=sensitiviy_mode,
         one_over_f_mode=one_over_f_mode, instrument=INSTRU,
-        overwrite_freq=overwrite_freq, t_obs_years=t_obs_years)
+        overwrite_freq=overwrite_freq, t_obs_years=t_obs_years,
+        SAC_yrs_LF=SAC_yrs_LF)
 
     '''Spectral Fisher matrix estimation'''
     diff_list_res = get_diff_list(model_results, params)

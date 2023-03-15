@@ -1077,7 +1077,7 @@ def get_noise_Cl(A, lmax, fsky, sensitiviy_mode=2, one_over_f_mode=2, instrument
             N_ell = V3_results[1][2:]
         else:
             N_ell = V3_results[1]
-        noise_nl = np.repeat(N_ell, 2, 0)[..., lmin-2:]
+        noise_nl = np.repeat(N_ell, 2, 0)
         planck_noise_lvl = model_skm.planck_sens_p  # in uk-arcmin
         # as it is the sensitivity for polarisation already, no sqrt(2) factor needed
         planck_noise_lvl *= np.pi / 180 / 60  # from arcmin to rad
