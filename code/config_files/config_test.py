@@ -35,7 +35,7 @@ else:
 save_path_ = pixel_path + 'results_and_data/full_pipeline/debug_LB/' + \
     date.today().strftime('%Y%m%d') + '_constrained_'
 save_path_ = '/home/baptiste/Documents/these/pixel_based_analysis/results_and_data/SAT_time_evolution_study/'
-if machine != 'idark':
+if machine != 'local':
     save_path_ = '/home/jost/results/SAT_time_evolution_study/'
 
 '''Cosmology params'''
