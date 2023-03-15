@@ -265,11 +265,13 @@ else:
         '.', 'p') + '.npy'
 print(S_cmb_name)
 
+start_sfn = time.time()
 data_model, fg_freq_maps, n_obspix = get_SFN(data, model_data, path_BB,
                                              S_cmb_name, spectral_flag,
                                              addnoise=add_noise,
                                              fg_angle=fg_angle_config,
                                              dust_angle=dust_angle, synch_angle=synch_angle)
+print('time get SFN=', time.time()-start_sfn)
 
 if fg_angle_config is not None:
     import healpy as hp
