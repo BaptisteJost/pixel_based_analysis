@@ -203,16 +203,16 @@ method_cosmo = 'L-BFGS-B'
 jac_cosmo_min = jac_cosmo
 
 '''spectral MCMC options'''
-spectral_MCMC_flag = 1
-nsteps_spectral = 30000
+spectral_MCMC_flag = 0
+nsteps_spectral = 90000
 # nsteps_spectral = 2000  # DEBUG LB
-discard_spectral = 10000
+discard_spectral = 40000
 # discard_spectral = 500  # DEBUG LB
 spectral_walker_per_dim = 2
 spectral_dim = freq_number + birefringence_flag + 2*spectral_flag
 
 '''Cosmo MCMC options'''
-cosmo_MCMC_flag = 1
+cosmo_MCMC_flag = 0
 nsteps_cosmo = 30000
 discard_cosmo = 15000
 cosmo_walker_per_dim = 2
