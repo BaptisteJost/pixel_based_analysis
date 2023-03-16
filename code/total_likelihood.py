@@ -126,7 +126,7 @@ def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_
                 N_ell = V3_results[-1]
             noise_nl = np.repeat(N_ell, 2, 0)[..., lmin-2:]
 
-        planck_noise_lvl = model_skm.planck_sens_p  # in uk-arcmin
+        planck_noise_lvl = copy.deepcopy(model_skm.planck_sens_p)  # in uk-arcmin
         # as it is the sensitivity for polarisation already, no sqrt(2) factor needed
         planck_noise_lvl *= np.pi / 180 / 60  # from arcmin to rad
         # rescaling to match SO sky fraction
@@ -134,7 +134,7 @@ def from_spectra_to_cosmo(spectral_params, model_skm, sensitiviy_mode, one_over_
         planck_noise_lvl *= np.sqrt(fsky) / np.sqrt(f_sky_planck)
 
         planck_nl_nobeam = planck_noise_lvl**2 * np.ones(len(ell_noise))
-        planck_beam_rad = model_skm.planck_beams * u.arcmin.to(u.rad)
+        planck_beam_rad = copy.deepcopy(model_skm.planck_beams) * u.arcmin.to(u.rad)
         planck_nl = []
         for f in range(len(planck_beam_rad)):
             Bl = hp.gauss_beam(planck_beam_rad[f], lmax=1000)[2:]
