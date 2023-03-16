@@ -337,9 +337,9 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
     angle_array_start = np.random.uniform(np.array(bounds)[:, 0],
                                           np.array(bounds)[:, 1])
     angle_constrain_start = np.delete(angle_array_start, pivot_angle_index)
-    true_params = np.append(np.delete(input_angles, pivot_angle_index), [1.54, -3])
+    # true_params = np.append(np.delete(input_angles, pivot_angle_index), [1.54, -3])
     print(angle_constrain_start)
-    results_min = minimize(constrained_chi2, true_params, args=(
+    results_min = minimize(constrained_chi2, angle_constrain_start, args=(
         data_model, model, pivot_angle_index, input_angles[pivot_angle_index], True, params),
         tol=1e-18, options={'maxiter': 1000}, method='L-BFGS-B',
         bounds=bounds[1:])
@@ -414,6 +414,9 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
     Cl_noise_matrix = np.zeros([2, 2, Cl_noise.shape[0]])
     Cl_noise_matrix[0, 0] = Cl_noise
     Cl_noise_matrix[1, 1] = Cl_noise
+
+    np.save(save_path + 'Cl_noise_matrix.npy', Cl_noise_matrix)
+
     # Cl_noise_matrix *= 10
     # IPython.embed()
     matrix_fg_yy = np.array([[Cl_fg['yy'][0], Cl_fg['yy'][2]],
@@ -422,6 +425,7 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
     tr_SigmaYY = np.einsum('ij,jimnl->mnl', sigma_spectral, Cl_residuals_matrix['YY'])
     Cl_data = Cl_residuals_matrix['yy'] + Cl_residuals_matrix['zy'] + \
         Cl_residuals_matrix['yz'] + tr_SigmaYY + Cl_noise_matrix
+    np.save(save_path + 'Cl_data.npy', Cl_data)
 
     # cosmo_params = [0.01, beta_true.value+prior_precision,
     #                 true_miscal_angles[pivot_angle_index].value + prior_precision]

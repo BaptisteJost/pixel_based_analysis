@@ -81,8 +81,8 @@ sensitiviy_mode = 1
 one_over_f_mode = 1
 one_over_ell = True
 beam_correction = True
-t_obs_years = 5
-SAC_yrs_LF = 2
+t_obs_years = 2
+SAC_yrs_LF = 0
 
 instr_Pl = {}
 instr_Pl['depth_i'] = np.array([2.5, 2.7, 3.5, 1.29, 0.55, 0.78, 2.56])*60.0  # in muK - arcmin
@@ -148,8 +148,10 @@ if not prior_gridding:
             prior_indices = [pivot_angle_index, pivot_angle_index+1]
         else:
             # prior_indices = [0, freq_number]
-            # prior_indices = [0, 4]  # only MF and HF, no LF and no prior on Planck
-            prior_indices = [0, 6]
+            if SAC_yrs_LF != 0:
+                prior_indices = [0, 6]
+            else:
+                prior_indices = [0, 4]  # only MF and HF, no LF and no prior on Planck
 
         if test1freq:
             prior_indices = [0, 1]  # test1freq
