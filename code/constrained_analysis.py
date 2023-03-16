@@ -337,8 +337,9 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
     angle_array_start = np.random.uniform(np.array(bounds)[:, 0],
                                           np.array(bounds)[:, 1])
     angle_constrain_start = np.delete(angle_array_start, pivot_angle_index)
+    true_params = np.append(np.delete(input_angles, pivot_angle_index), [1.54, -3])
     print(angle_constrain_start)
-    results_min = minimize(constrained_chi2, angle_constrain_start, args=(
+    results_min = minimize(constrained_chi2, true_params, args=(
         data_model, model, pivot_angle_index, input_angles[pivot_angle_index], True, params),
         tol=1e-18, options={'maxiter': 1000}, method='L-BFGS-B',
         bounds=bounds[1:])
