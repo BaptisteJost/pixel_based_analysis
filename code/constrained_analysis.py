@@ -347,7 +347,7 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
           results_min.x[:freq_number-1] - np.delete(true_miscal_angles, pivot_angle_index).value)
     print('results - spectral_true = ', results_min.x[-2] - 1.54)
     print('results - spectral_true = ', results_min.x[-1] + 3)
-    IPython.embed()
+    # IPython.embed()
     results_min_array.append(results_min.x)
 
     angle_eval = np.insert(results_min.x[:freq_number-1],
@@ -634,6 +634,7 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
     plt.xlabel('r')
     plt.show()
     # IPython.embed()
+    '''
     ind_r_fit = np.nanargmin(L_grid_)
     r_fit = r_range[ind_r_fit]
     # print('logL', L_grid_)
@@ -656,6 +657,7 @@ for prior_precision, prior_matrix in zip(precision_array, prior_matrix_array):
     cum /= cum[-1]*2
     # sigma_r_basic68 = rs_pos[np.argmin(np.abs(cum - 0.68))] - r_fit
     sigma_r_basic34 = rs_pos[np.argmin(np.abs(cum - 0.34))] - r_fit
+    '''
     # plt.plot(r_range, L_grid)
     # plt.plot(r_range, fisher_r_grid)
     # plt.vlines(result_cosmo.x[0], plt.ylim()[0], plt.ylim()[1], linestyles='--', colors='b')
