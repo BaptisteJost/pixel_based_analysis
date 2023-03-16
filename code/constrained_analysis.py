@@ -27,7 +27,7 @@ path_config = './config_files'
 sys.path.append(path_config)
 
 if True:  # this is just so that my autotpep8 doesn't put the import above the sys.path.append ...
-    from config_test import *
+    from config_SAT_Planck_1yr_noLF.py import *
 
 
 def constrained_cosmo_fixed_r(cosmo_params, Cl_fid, Cl_data, Cl_noise_matrix, dWA_cmb,
@@ -221,7 +221,7 @@ if os.path.exists(save_path):
 else:
     os.mkdir(save_path)
 # shutil.copy('config.py', save_path)
-shutil.copy(path_config+'/config_test.py', save_path)
+shutil.copy(path_config+'/config_SAT_Planck_1yr_noLF.py', save_path)
 
 if prior_gridding:
     # precision_array = np.logspace(-4, np.log10(5), 40)
